@@ -48,9 +48,6 @@ dnn_synthetic_vi/
 Five Env × Timepoint groups are used (one optimal flight per trial year):  
 `HELF24_TP7`, `KET21_TP4`, `MCG23_TP5`, `MCG25_TP12`, `SNY22_TP6`
 
-> **Note:** MCG25_TP12 is a late-season flight with an inverted spectral–yield
-> relationship; it is excluded from all model training (see the MCG25 Diagnostic
-> section in the report).
 
 ---
 
@@ -134,5 +131,4 @@ The pre-rendered report is at `docs/DNN_Synthetic_VI.html`. Key outputs:
 
 ## Citation / contact
 
-Siim Sepp — s11ms3pp@gmail.com  
-NY Winter Malting Barley Breeding Programme
+Siim Sepp — sss322cornell.edu 
