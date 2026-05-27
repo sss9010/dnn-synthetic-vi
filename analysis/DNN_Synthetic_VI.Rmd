@@ -1,0 +1,1914 @@
+﻿---
+title: "DNN-Derived Synthetic Vegetation Index for Phenotype Prediction"
+author: "Siim Sepp"
+date: "`r Sys.time()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    number_sections: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width  = 10,
+  fig.height = 6
+)
+```
+
+# Overview
+
+This script uses a deep neural network (DNN) to derive **data-driven vegetation
+indices** from raw multispectral drone imagery for the NY Winter Malting Barley
+breeding programme.
+
+## What it does
+
+Standard vegetation indices (NDVI, NDRE, etc.) are fixed, hand-crafted
+combinations of spectral bands designed for generic vegetation monitoring. Here,
+we instead **let the data determine the optimal band combination** for each
+agronomic or malt-quality trait. The result is a trait-specific **Synthetic VI**
+— a scalar value computed from the five raw bands (blue, green, red, red_edge,
+nir) that maximises predictive accuracy for that trait.
+
+A separate model is trained for each phenotype trait, yielding a distinct
+Synthetic VI per trait. After model training, the learned encoder weights are
+extracted and presented as an explicit mathematical formula so the index can be
+computed directly from band reflectances without re-running the DNN.
+
+## Modelling approach
+
+The DNN has a **bottleneck architecture** with two components:
+
+1. **Band Encoder** (5 → 16 → 8 → 1): three fully-connected layers with ReLU
+   activations compress the five bands into a single scalar — the Synthetic VI.
+   The final layer has no activation, so the index spans the full real line.
+
+2. **Prediction Head** (1 → 8 → 1): maps the Synthetic VI through one hidden
+   layer to the trait value.
+
+The bottleneck forces all spectral information through a single neuron before
+prediction, mimicking the structure of hand-crafted indices (e.g. NDVI uses a
+single derived value) while allowing non-linear, data-optimised band combinations.
+Only five specific Timepoint × Environment groups are used, one per trial year,
+representing the flight timing judged most informative per environment:
+`HELF24_TP7`, `KET21_TP4`, `MCG23_TP5`, `MCG25_TP12`, `SNY22_TP6`.
+
+## Cross-validation
+
+Two complementary CV scenarios are implemented. In both, splits are by **GID**
+(genotype ID) to prevent data leakage, and scalers are fit on training data only
+then applied to test folds.
+
+### Leave-One-Environment-Out (LOEO)
+
+All observations from one environment are withheld; the model trains on the
+remaining four. This measures **cross-environment generalisation**.
+
+MCG25 is excluded from all analyses (see MCG25 Diagnostic section) because its
+late-season flight (TP12) produces an inverted spectral–yield relationship
+incompatible with the other four environments.
+
+| Fold | Training environments | Validation environment |
+|------|-----------------------|------------------------|
+| 1 | KET21, MCG23, SNY22 | HELF24 |
+| 2 | HELF24, MCG23, SNY22 | KET21 |
+| 3 | HELF24, KET21, SNY22 | MCG23 |
+| 4 | HELF24, KET21, MCG23 | SNY22 |
+
+### Within-Environment 5-Fold CV (by GID)
+
+Within each environment, GIDs are shuffled and assigned to 5 folds. The model
+trains on 4/5 of GIDs and predicts the remaining 1/5. This measures
+**within-environment predictive ability** for unseen genotypes.
+
+Each scenario is repeated 3 times with different random seeds. Performance is
+Pearson *r* and RMSE on the back-transformed trait scale, benchmarked against
+linear regression on standard VIs under the same schemes.
+
+```{r libraries}
+# ── Core data wrangling & visualisation ────────────────────────────────────
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(corrplot)
+library(knitr)
+library(kableExtra)
+
+# ── Deep learning ──────────────────────────────────────────────────────────
+# torch is the primary backend; neuralnet is a lightweight fallback
+if (!requireNamespace("torch", quietly = TRUE)) {
+  stop("Package 'torch' is required. Install with: install.packages('torch'); torch::install_torch()")
+}
+library(torch)
+if (!torch::torch_is_installed()) torch::install_torch()
+set.seed(42)
+torch_manual_seed(42)
+```
+
+# Data Loading and Exploration
+
+```{r load-data}
+# ── Resolve data path ──────────────────────────────────────────────────────
+pheno_paths <- c(
+  "C:/Users/Siim Sepp/NY_WMBCL/data/WMB_pheno.Rdata",
+  "~/Documents/GitHub/NY_WMBCL/data/WMB_pheno.Rdata",
+  "data/WMB_pheno.Rdata"
+)
+pheno_file <- pheno_paths[file.exists(pheno_paths)][1]
+if (is.na(pheno_file)) stop("WMB_pheno.Rdata not found in any expected location.")
+message("Loading: ", pheno_file)
+load(pheno_file)   # loads one or more objects into the environment
+
+# ── Identify the main data frame ───────────────────────────────────────────
+# List objects and find the data frame that is most likely the phenotype table
+loaded_objs <- ls()
+df_candidates <- loaded_objs[sapply(loaded_objs, function(x) is.data.frame(get(x)))]
+message("Data frames found: ", paste(df_candidates, collapse = ", "))
+
+# Use the largest data frame if multiple exist
+if (length(df_candidates) == 1) {
+  pheno_raw <- get(df_candidates)
+} else {
+  sizes      <- sapply(df_candidates, function(x) nrow(get(x)))
+  pheno_raw  <- get(df_candidates[which.max(sizes)])
+  message("Using: ", df_candidates[which.max(sizes)])
+}
+
+cat("Dimensions:", nrow(pheno_raw), "rows ×", ncol(pheno_raw), "cols\n")
+glimpse(pheno_raw)
+```
+
+```{r identify-columns}
+# ── Band columns ───────────────────────────────────────────────────────────
+# Use anchored / precise patterns so that e.g. "red" does NOT match "red_edge"
+BAND_NAMES <- c("blue", "green", "red", "red_edge", "nir")
+band_patterns <- c(
+  blue     = "^blue$",
+  green    = "^green$",
+  red      = "^red$",                          # exact – must NOT match red_edge
+  red_edge = "red[._]?edge|rededge",
+  nir      = "^nir$"
+)
+band_cols <- sapply(names(band_patterns), function(b) {
+  m <- grep(band_patterns[b], names(pheno_raw), ignore.case = TRUE, value = TRUE)
+  if (length(m) == 0) NA_character_ else m[1]
+}, USE.NAMES = TRUE)
+band_cols <- band_cols[!is.na(band_cols)]
+# band_cols: names = canonical BAND_NAMES, values = actual column names in pheno_raw
+cat("Band columns found:\n"); print(band_cols)
+if (length(band_cols) < 5)
+  warning("Only ", length(band_cols), " of 5 expected bands found: ",
+          paste(setdiff(BAND_NAMES, names(band_cols)), collapse = ", "), " missing.")
+
+# ── Standard VI columns ────────────────────────────────────────────────────
+vi_candidates <- c("NDVI","NDRE","EVI","GNDVI","SAVI","ENDVI","GDVI","NRI","GIPVI","PSRI")
+vi_cols <- intersect(vi_candidates, names(pheno_raw))
+cat("Standard VI columns found:", paste(vi_cols, collapse = ", "), "\n")
+
+# ── Timepoint column ───────────────────────────────────────────────────────
+tp_col <- intersect(c("Timepoint","timepoint","TP","tp","time_point"),
+                    names(pheno_raw))[1]
+cat("Timepoint column:", tp_col, "\n")
+
+# ── Candidate trait columns ────────────────────────────────────────────────
+# Exclude IDs, bands, VIs and spatial variables
+exclude_pat <- paste(c("GID","plot_id","Env","Row","Col","Timepoint","Fam",
+                       "JD","DAS","GDD", BAND_NAMES, vi_candidates),
+                     collapse="|")
+#trait_cols <- names(pheno_raw)[
+#  !grepl(exclude_pat, names(pheno_raw), ignore.case = TRUE) &
+#  sapply(pheno_raw, is.numeric)
+#]
+
+trait_cols<- colnames(pheno_raw)[19]
+cat("Candidate trait columns:\n"); print(trait_cols)
+
+# ── Environment column ─────────────────────────────────────────────────────
+env_col <- intersect(c("Env","env","environment","trial"), names(pheno_raw))[1]
+cat("Environment column:", env_col, "\n")
+
+# ── GID column ─────────────────────────────────────────────────────────────
+gid_col <- intersect(c("GID","gid","Genotype","genotype","EntryName","entry_name",
+                       "Line","line","Name","name"),
+                     names(pheno_raw))[1]
+cat("GID column:", gid_col, "\n")
+```
+
+```{r data-summary}
+# ── Descriptive summary ────────────────────────────────────────────────────
+cat("\nEnvironments present:\n")
+print(table(pheno_raw[[env_col]]))
+
+cat("\nBand value ranges:\n")
+pheno_raw %>%
+  select(all_of(unname(band_cols))) %>%
+  summarise(across(everything(), list(
+    min  = ~min(., na.rm = TRUE),
+    mean = ~mean(., na.rm = TRUE),
+    max  = ~max(., na.rm = TRUE),
+    pct_na = ~mean(is.na(.)) * 100
+  ))) %>%
+  pivot_longer(everything(), names_to = c("band","stat"), names_sep = "_(?=[^_]+$)") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  kable(digits = 3, caption = "Band summary statistics") %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+```
+
+# Data Preparation
+
+```{r data-prep}
+# ── Build modelling dataset ────────────────────────────────────────────────
+found_band_names <- names(band_cols)
+
+tp_cols_select  <- if (!is.na(tp_col))  tp_col  else character(0)
+gid_cols_select <- if (!is.na(gid_col)) gid_col else character(0)
+
+model_data <- pheno_raw %>%
+  select(all_of(c(gid_cols_select, env_col, tp_cols_select,
+                  unname(band_cols), vi_cols, trait_cols))) %>%
+  rename(Env = all_of(env_col)) %>%
+  rename(all_of(band_cols)) %>%
+  filter(if_all(all_of(found_band_names), ~ !is.na(.))) %>%
+  mutate(Env = as.factor(Env))
+
+# ── Standardise GID column name ────────────────────────────────────────────
+if (!is.na(gid_col) && gid_col %in% names(model_data) && gid_col != "GID") {
+  model_data <- model_data %>% rename(GID = all_of(gid_col))
+} else if (!"GID" %in% names(model_data)) {
+  model_data$GID <- as.character(seq_len(nrow(model_data)))
+  warning("No GID column found; using row index as GID.")
+}
+
+# ── Standardise Timepoint column name ─────────────────────────────────────
+if (!is.na(tp_col) && tp_col != "Timepoint") {
+  model_data <- model_data %>% rename(Timepoint = all_of(tp_col))
+}
+if (!"Timepoint" %in% names(model_data)) {
+  model_data$Timepoint <- 1L
+  warning("No Timepoint column found; treating all rows as a single timepoint.")
+}
+
+# ── Group variable: Env × Timepoint ───────────────────────────────────────
+model_data <- model_data %>%
+  mutate(Timepoint = as.integer(Timepoint),
+         group     = paste(Env, Timepoint, sep = "_TP"))
+
+model_data <- model_data %>%
+  filter(group %in% c("HELF24_TP7","KET21_TP4","MCG23_TP5","MCG25_TP12","SNY22_TP6"))
+
+BAND_NAMES <- found_band_names
+cat("\nRows with complete band data (all 5 environments):", nrow(model_data), "\n")
+
+# ── Compute NDVI from raw band values (before any standardisation) ────────
+if (all(c("red", "nir") %in% names(model_data))) {
+  model_data <- model_data %>%
+    mutate(NDVI_raw = (nir - red) / (nir + red + 1e-8))
+  cat("NDVI_raw computed: min =", round(min(model_data$NDVI_raw, na.rm=TRUE), 3),
+      " mean =", round(mean(model_data$NDVI_raw, na.rm=TRUE), 3),
+      " max =", round(max(model_data$NDVI_raw, na.rm=TRUE), 3), "\n")
+} else {
+  warning("Cannot compute NDVI_raw: 'red' or 'nir' not found in band columns.")
+}
+
+# ── Save truly raw copy with all 5 environments (used in MCG25 diagnostic) ─
+model_data_raw_orig <- model_data
+
+# ── Exclude MCG25: TP12 is a late-season flight with inverted spectral-yield
+#    relationship (see MCG25 Diagnostic section). All model training uses
+#    the remaining 4 environments only.
+model_data <- model_data %>% filter(Env != "MCG25")
+cat("MCG25 excluded. Remaining environments:",
+    paste(sort(unique(as.character(model_data$Env))), collapse = ", "), "\n")
+cat("Remaining rows:", nrow(model_data), "\n")
+
+group_levels_all <- sort(unique(model_data$group))
+cat("Timepoint × Environment groups:", length(group_levels_all), "\n")
+print(group_levels_all)
+
+# ── Per-environment spectral standardisation ──────────────────────────────
+# Each band is z-scored within its environment, removing environment-specific
+# spectral baseline offsets (sensor calibration, soil background, canopy
+# structure differences between trials). Applied after NDVI_raw so NDVI
+# uses original reflectances. Both model_data_raw (CV) and model_data
+# (full-data models) receive these standardised bands.
+model_data <- model_data %>%
+  group_by(Env) %>%
+  mutate(across(all_of(BAND_NAMES),
+                ~ (. - mean(., na.rm = TRUE)) / (sd(., na.rm = TRUE) + 1e-8))) %>%
+  ungroup()
+
+cat("\nPer-environment band standardisation applied.\n")
+cat("Post-standardisation band means per environment (should be ~0):\n")
+model_data %>%
+  group_by(Env) %>%
+  summarise(across(all_of(BAND_NAMES), ~ round(mean(., na.rm = TRUE), 3)),
+            .groups = "drop") %>%
+  print()
+
+# ── Save env-standardised, unscaled copy for per-fold scaling in CV ────────
+model_data_raw <- model_data
+
+# ── Global scaling of model_data (used for full-data models & plots) ───────
+band_scale <- map(BAND_NAMES, function(b) {
+  list(min = min(model_data[[b]], na.rm = TRUE),
+       max = max(model_data[[b]], na.rm = TRUE))
+}) %>% set_names(BAND_NAMES)
+
+for (b in BAND_NAMES) {
+  rng <- band_scale[[b]]
+  model_data[[b]] <- (model_data[[b]] - rng$min) / (rng$max - rng$min + 1e-8)
+}
+
+trait_scale <- map(trait_cols, function(t) {
+  vals <- model_data[[t]]
+  list(mean = mean(vals, na.rm = TRUE), sd = sd(vals, na.rm = TRUE))
+}) %>% set_names(trait_cols)
+
+for (t in trait_cols) {
+  sc <- trait_scale[[t]]
+  model_data[[t]] <- (model_data[[t]] - sc$mean) / (sc$sd + 1e-8)
+}
+
+cat("Traits to model:", length(trait_cols), "\n")
+```
+
+```{r band-correlations, fig.cap="Correlations among raw spectral bands"}
+# ── Visual EDA: band-band and band-VI correlations ─────────────────────────
+cor_bands <- cor(model_data[, BAND_NAMES], use = "pairwise.complete.obs")
+corrplot(cor_bands, method = "color", type = "upper",
+         addCoef.col = "black", number.cex = 0.8,
+         title = "Band–Band Correlations", mar = c(0,0,2,0))
+```
+
+# MCG25 Diagnostic Analysis
+
+MCG25 (timepoint 12) is the single environment that consistently fails in LOEO
+cross-validation. This section investigates whether the failure is driven by
+spectral range differences, a different yield–NDVI relationship within the
+environment, or the unusually late flight timing relative to the other four trials.
+
+```{r mcg25-timepoint-context}
+# ── Timepoint context: how late is MCG25_TP12 relative to the other groups? ─
+tp_context <- model_data_raw_orig %>%
+  distinct(Env, Timepoint, group) %>%
+  arrange(Timepoint)
+
+tp_context %>%
+  kable(col.names = c("Environment", "Timepoint", "Group"),
+        caption = "Selected Timepoint × Environment groups — MCG25 uses a much later flight") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+```{r mcg25-yield-ndvi-dist, fig.height=5, fig.cap="Yield and NDVI distributions per environment"}
+p_yield <- model_data_raw_orig %>%
+  filter(!is.na(.data[[trait_cols[1]]])) %>%
+  ggplot(aes(x = .data[[trait_cols[1]]], fill = Env)) +
+  geom_density(alpha = 0.65) +
+  facet_wrap(~Env, ncol = 5, scales = "free_y") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = trait_cols[1], y = "Density", title = "Yield distribution") +
+  theme_bw(base_size = 10) + theme(legend.position = "none")
+
+p_ndvi <- model_data_raw_orig %>%
+  ggplot(aes(x = NDVI_raw, fill = Env)) +
+  geom_density(alpha = 0.65) +
+  facet_wrap(~Env, ncol = 5, scales = "free_y") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = "NDVI (raw)", y = "Density", title = "NDVI distribution") +
+  theme_bw(base_size = 10) + theme(legend.position = "none")
+
+p_yield / p_ndvi
+```
+
+```{r mcg25-band-distributions, fig.height=4, fig.cap="Raw band reflectance distributions by environment — MCG25 at TP12 may occupy a different spectral range"}
+model_data_raw_orig %>%
+  select(Env, all_of(BAND_NAMES)) %>%
+  pivot_longer(all_of(BAND_NAMES), names_to = "band", values_to = "value") %>%
+  mutate(band = factor(band, levels = BAND_NAMES)) %>%
+  ggplot(aes(x = Env, y = value, fill = Env)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  facet_wrap(~band, scales = "free_y", nrow = 1) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = NULL, y = "Reflectance", title = "Band reflectance by environment") +
+  theme_bw(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        legend.position = "none")
+```
+
+```{r mcg25-ndvi-yield-scatter, fig.height=6, fig.cap="NDVI vs yield within each environment — correlation and regression line"}
+trait_diag <- trait_cols[1]
+
+cors_ndvi <- model_data_raw_orig %>%
+  filter(!is.na(.data[[trait_diag]]), !is.na(NDVI_raw)) %>%
+  group_by(Env) %>%
+  summarise(r     = cor(NDVI_raw, .data[[trait_diag]], use = "complete.obs"),
+            label = paste0("r = ", round(r, 3)),
+            .groups = "drop")
+
+model_data_raw_orig %>%
+  filter(!is.na(.data[[trait_diag]]), !is.na(NDVI_raw)) %>%
+  ggplot(aes(x = NDVI_raw, y = .data[[trait_diag]], colour = Env)) +
+  geom_point(alpha = 0.35, size = 1.2) +
+  geom_smooth(method = "lm", se = TRUE, colour = "black", linewidth = 0.8) +
+  geom_label(data = cors_ndvi,
+             aes(x = -Inf, y = Inf, label = label),
+             hjust = -0.05, vjust = 1.4,
+             inherit.aes = FALSE, size = 3.5, fontface = "bold",
+             fill = "white", label.size = 0.2) +
+  facet_wrap(~Env, ncol = 3, scales = "free") +
+  scale_colour_brewer(palette = "Set2") +
+  labs(x = "NDVI (raw)", y = trait_diag,
+       title = "NDVI vs yield: within-environment scatter") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "none")
+```
+
+```{r mcg25-band-yield-cors}
+# ── Within-environment Pearson r for every band and NDVI vs trait ──────────
+trait_diag <- trait_cols[1]
+
+band_yield_cors <- model_data_raw_orig %>%
+  filter(!is.na(.data[[trait_diag]])) %>%
+  group_by(Env) %>%
+  summarise(
+    across(all_of(c(BAND_NAMES, "NDVI_raw")),
+           ~ round(cor(., .data[[trait_diag]], use = "complete.obs"), 3)),
+    n_obs = sum(!is.na(.data[[trait_diag]])),
+    .groups = "drop"
+  )
+
+band_yield_cors %>%
+  kable(caption = paste("Within-environment Pearson r: each band and NDVI vs", trait_diag)) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+```{r mcg25-band-yield-heatmap, fig.height=3.5, fig.cap="Heatmap of within-environment band–yield correlations"}
+band_yield_cors %>%
+  select(Env, all_of(BAND_NAMES), NDVI_raw) %>%
+  pivot_longer(-Env, names_to = "band", values_to = "r") %>%
+  mutate(band = factor(band, levels = c(BAND_NAMES, "NDVI_raw"))) %>%
+  ggplot(aes(x = band, y = Env, fill = r)) +
+  geom_tile(colour = "white", linewidth = 0.5) +
+  geom_text(aes(label = round(r, 2)), size = 3.5, fontface = "bold") +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#b2182b",
+                       midpoint = 0, limits = c(-1, 1)) +
+  labs(x = "Spectral predictor", y = NULL,
+       title = paste("Within-environment Pearson r — band/NDVI vs", trait_diag),
+       fill = "r") +
+  theme_bw(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r mcg25-between-within-variance}
+# ── Variance partitioning: η² (between-env SS / total SS) per band ────────
+# High η² means most spectral variance is between environments (not genotypes).
+# If MCG25 is spectrally extreme, it will dominate the between-env component.
+vp <- model_data_raw_orig %>%
+  select(Env, all_of(BAND_NAMES), NDVI_raw, all_of(trait_cols[1])) %>%
+  pivot_longer(-Env, names_to = "variable", values_to = "value") %>%
+  filter(!is.na(value)) %>%
+  group_by(variable) %>%
+  mutate(grand_mean = mean(value)) %>%
+  group_by(variable, Env) %>%
+  mutate(env_mean = mean(value)) %>%
+  ungroup() %>%
+  group_by(variable) %>%
+  summarise(
+    SS_total   = sum((value - grand_mean)^2),
+    SS_between = sum((env_mean - grand_mean)^2),
+    eta2       = round(SS_between / SS_total, 3),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(eta2))
+
+vp %>%
+  kable(col.names = c("Variable", "SS total", "SS between-env", "η² (between-env)"),
+        digits = c(0, 0, 0, 3),
+        caption = "Variance partitioning: proportion of total variance attributable to environment") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# DNN Architecture
+
+The network has two components trained **within each Timepoint × Environment group**:
+
+1. **Band Encoder** — three fully-connected layers (n_bands → 16 → 8 → 1).
+   The single output neuron is the *Synthetic VI* — no activation, so it spans
+   the full real line.
+
+2. **Prediction Head** — maps the scalar Synthetic VI through one hidden layer
+   to the trait prediction.
+
+The prediction head receives the Synthetic VI concatenated with a learned
+**environment embedding** so that the VI→trait mapping can shift per trial,
+while the encoder (VI formula) remains shared across environments.
+For unseen environments in LOEO, the mean embedding of the training environments
+is used as a proxy.
+
+```{r dnn-definition}
+# ══════════════════════════════════════════════════════════════════════════
+# Band Encoder: n_bands → 16 → 8 → 1 (Synthetic VI bottleneck)
+# ══════════════════════════════════════════════════════════════════════════
+BandEncoder <- nn_module(
+  classname = "BandEncoder",
+  initialize = function(n_bands = 5, h1 = 16, h2 = 8) {
+    self$fc1  <- nn_linear(n_bands, h1)
+    self$fc2  <- nn_linear(h1, h2)
+    self$fc3  <- nn_linear(h2, 1)      # bottleneck = Synthetic VI (linear out)
+    self$drop <- nn_dropout(0.1)
+  },
+  forward = function(x) {
+    x <- x %>% self$fc1() %>% nnf_relu() %>% self$drop()
+    x <- x %>% self$fc2() %>% nnf_relu() %>% self$drop()
+    self$fc3(x)
+  }
+)
+
+# ══════════════════════════════════════════════════════════════════════════
+# Full predictor: encoder → Synthetic VI → prediction head → trait
+# ══════════════════════════════════════════════════════════════════════════
+SyntheticVIModel <- nn_module(
+  classname = "SyntheticVIModel",
+  initialize = function(n_bands = 5, n_envs = 5, d_embed = 4L, pred_h = 8L) {
+    self$encoder  <- BandEncoder(n_bands)
+    self$env_emb  <- nn_embedding(n_envs, d_embed)     # one vector per environment
+    self$pred_fc1 <- nn_linear(1L + d_embed, pred_h)   # [SynVI | env_embed] → hidden
+    self$pred_fc2 <- nn_linear(pred_h, 1L)
+    self$drop     <- nn_dropout(0.1)
+  },
+  forward = function(bands, env_idx = NULL, env_vec = NULL) {
+    vi <- self$encoder(bands)                           # (N, 1)
+    ev <- if (!is.null(env_idx)) {
+      self$env_emb(env_idx)                             # (N, d_embed) — known env
+    } else {
+      env_vec$expand(c(vi$size(1), -1L))                # broadcast mean embed for unseen env
+    }
+    torch_cat(list(vi, ev), dim = 2) %>%
+      self$pred_fc1() %>% nnf_relu() %>% self$drop() %>%
+      self$pred_fc2()
+  },
+  get_synthetic_vi = function(bands) {
+    self$encoder(bands)
+  }
+)
+
+cat("Model architecture defined.\n")
+cat("  Encoder:       n_bands → 16 → 8 → 1 (Synthetic VI)\n")
+cat("  Env embedding: n_envs × d_embed = 4\n")
+cat("  Predictor:     (1 + 4) → 8 → 1 (trait)\n")
+```
+
+# Training
+
+Two CV scenarios are run in parallel:
+
+- **LOEO**: holds out one environment at a time, trains on the other four.
+- **Within-env 5-fold CV**: within each environment, GIDs are assigned to 5 folds;
+  the model trains on 4 folds and predicts the 5th.
+
+In both, the band scaler (0–1 min–max) and trait scaler (z-score) are fit on
+training data only and applied to the test fold — `model_data_raw` (unscaled) is
+passed to the CV functions so scaling is done internally.
+
+After CV, a final model trained on all data is used to extract the **Synthetic VI formula**.
+
+```{r training-functions}
+# ── Helper: build band + label tensors from a pre-scaled data frame ────────
+make_tensors <- function(df, trait) {
+  df_sub <- df[!is.na(df[[trait]]), ]
+  list(
+    bands = torch_tensor(as.matrix(df_sub[, BAND_NAMES, drop = FALSE]),
+                         dtype = torch_float()),
+    y     = torch_tensor(df_sub[[trait]], dtype = torch_float())$unsqueeze(2)
+  )
+}
+
+# ── Scale df using stats from train_df; return scaled df + back-transform params
+scale_from_train <- function(df, train_df, trait) {
+  band_sc  <- map(BAND_NAMES, function(b)
+    list(mn = min(train_df[[b]], na.rm = TRUE),
+         mx = max(train_df[[b]], na.rm = TRUE))) %>% set_names(BAND_NAMES)
+  trait_mn <- mean(train_df[[trait]], na.rm = TRUE)
+  trait_sd <- sd(train_df[[trait]],   na.rm = TRUE)
+  for (b in BAND_NAMES) {
+    sc <- band_sc[[b]]
+    df[[b]] <- (df[[b]] - sc$mn) / (sc$mx - sc$mn + 1e-8)
+  }
+  df[[trait]] <- (df[[trait]] - trait_mn) / (trait_sd + 1e-8)
+  list(df = df, trait_mn = trait_mn, trait_sd = trait_sd)
+}
+
+# ── Core training loop ─────────────────────────────────────────────────────
+train_model <- function(train_df, trait, env_levels,
+                        epochs = 300, lr = 3e-3, batch_size = 64,
+                        seed = NULL, verbose = FALSE) {
+  if (!is.null(seed)) torch_manual_seed(seed)
+  df_sub  <- train_df[!is.na(train_df[[trait]]), ]
+  tensors <- make_tensors(train_df, trait)
+  n       <- tensors$bands$size(1)
+  if (n < 10) return(NULL)
+
+  # Environment indices (1-based, as required by torch nn_embedding in R)
+  env_idx <- torch_tensor(
+    match(as.character(df_sub$Env), env_levels),
+    dtype = torch_long()
+  )
+
+  n_envs <- length(env_levels)
+  model  <- SyntheticVIModel(n_bands = length(BAND_NAMES),
+                              n_envs = n_envs, d_embed = 4L, pred_h = 8L)
+  opt    <- optim_adam(model$parameters, lr = lr, weight_decay = 1e-4)
+  sched  <- lr_step(opt, step_size = 100, gamma = 0.5)
+
+  model$train()
+  for (ep in seq_len(epochs)) {
+    idx <- sample(n)
+    for (i in seq(1, n, by = batch_size)) {
+      bi <- idx[i:min(i + batch_size - 1, n)]
+      opt$zero_grad()
+      pred <- model(tensors$bands[bi, , drop = FALSE],
+                    env_idx = env_idx[bi])
+      loss <- nnf_mse_loss(pred, tensors$y[bi, , drop = FALSE])
+      loss$backward()
+      nn_utils_clip_grad_norm_(model$parameters, 1.0)
+      opt$step()
+    }
+    sched$step()
+    if (verbose && ep %% 100 == 0)
+      cat(sprintf("  ep %d | loss %.4f\n", ep, loss$item()))
+  }
+  model$eval()
+  model
+}
+
+# ── LOEO: Leave-One-Environment-Out CV ────────────────────────────────────
+# Takes raw (unscaled) data. Scaler fit on training environments only.
+# For the unseen held-out environment, the mean embedding of the 4 training
+# environments is used as a proxy in the prediction head.
+loeo_cv <- function(data_raw, trait, env_levels, n_reps = 3,
+                    epochs = 300, lr = 3e-3, batch_size = 64) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(held_env) {
+    train_raw <- data_raw %>% filter(Env != held_env, !is.na(.data[[trait]]))
+    test_raw  <- data_raw %>% filter(Env == held_env,  !is.na(.data[[trait]]))
+    if (nrow(train_raw) < 10 || nrow(test_raw) < 2) return(NULL)
+
+    sc_out   <- scale_from_train(train_raw, train_raw, trait)
+    train_sc <- sc_out$df
+    trait_mn <- sc_out$trait_mn
+    trait_sd <- sc_out$trait_sd
+    test_sc  <- scale_from_train(test_raw, train_raw, trait)$df
+
+    # Indices (1-based) of the 4 training environments
+    train_env_idx <- torch_tensor(
+      match(sort(unique(as.character(train_raw$Env))), env_levels),
+      dtype = torch_long()
+    )
+
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      model <- tryCatch(
+        train_model(train_sc, trait, env_levels = env_levels,
+                    epochs = epochs, lr = lr,
+                    batch_size = batch_size, seed = rep_i * 100L),
+        error = function(e) { message(held_env, " rep", rep_i, ": ", e$message); NULL }
+      )
+      if (is.null(model)) return(NULL)
+
+      # Mean embedding of training envs → proxy for unseen held-out environment
+      mean_env_vec <- with_no_grad({
+        model$env_emb(train_env_idx)$mean(dim = 1, keepdim = TRUE)
+      })
+
+      te_ten <- make_tensors(test_sc, trait)
+      with_no_grad({
+        pred_z <- model(te_ten$bands, env_vec = mean_env_vec)$squeeze()$to(device = "cpu")
+      })
+      pred <- as.numeric(pred_z) * trait_sd + trait_mn
+      obs  <- as.numeric(te_ten$y$squeeze()) * trait_sd + trait_mn
+      tibble(held_env = held_env, rep = rep_i, n_test = length(obs),
+             r    = cor(pred, obs, use = "complete.obs"),
+             rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+    })
+  })
+}
+
+# ── Within-environment 5-fold CV (split by GID) ───────────────────────────
+# Takes raw (unscaled) data. GIDs assigned to folds; scaler fit on train GIDs.
+# The correct environment index is known for both train and test, so the
+# learned embedding is used directly (no mean-proxy needed).
+within_env_cv <- function(data_raw, trait, env_levels, n_folds = 5, n_reps = 3,
+                          epochs = 300, lr = 3e-3, batch_size = 64) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(env_i) {
+    env_df    <- data_raw %>% filter(Env == env_i, !is.na(.data[[trait]]))
+    gids      <- unique(env_df$GID)
+    env_i_idx <- match(env_i, env_levels)   # 1-based index for this env (torch R convention)
+    if (length(gids) < n_folds) {
+      message("Env ", env_i, ": ", length(gids), " GIDs < n_folds — skipping")
+      return(NULL)
+    }
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids   <- gid_fold$GID[gid_fold$fold == f]
+        train_raw_f <- env_df %>% filter(!GID %in% test_gids)
+        test_raw_f  <- env_df %>% filter( GID %in% test_gids)
+        if (nrow(train_raw_f) < 10 || nrow(test_raw_f) < 2) return(NULL)
+
+        sc_out   <- scale_from_train(train_raw_f, train_raw_f, trait)
+        train_sc <- sc_out$df
+        trait_mn <- sc_out$trait_mn
+        trait_sd <- sc_out$trait_sd
+        test_sc  <- scale_from_train(test_raw_f, train_raw_f, trait)$df
+
+        model <- tryCatch(
+          train_model(train_sc, trait, env_levels = env_levels,
+                      epochs = epochs, lr = lr,
+                      batch_size = batch_size, seed = rep_i * 100L + f),
+          error = function(e) NULL
+        )
+        if (is.null(model)) return(NULL)
+        te_ten    <- make_tensors(test_sc, trait)
+        te_env_idx <- torch_tensor(
+          rep(env_i_idx, te_ten$bands$size(1)),
+          dtype = torch_long()
+        )
+        with_no_grad({
+          pred_z <- model(te_ten$bands,
+                          env_idx = te_env_idx)$squeeze()$to(device = "cpu")
+        })
+        pred <- as.numeric(pred_z) * trait_sd + trait_mn
+        obs  <- as.numeric(te_ten$y$squeeze()) * trait_sd + trait_mn
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── Linear-model LOEO CV (for NDVI baseline) ─────────────────────────────
+linreg_loeo_cv <- function(data_raw, predictor, trait) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(held_env) {
+    tr <- data_raw %>% filter(Env != held_env,
+                              !is.na(.data[[predictor]]), !is.na(.data[[trait]]))
+    te <- data_raw %>% filter(Env == held_env,
+                              !is.na(.data[[predictor]]), !is.na(.data[[trait]]))
+    if (nrow(tr) < 10 || nrow(te) < 2) return(NULL)
+    fit  <- lm(as.formula(paste(trait, "~", predictor)), data = tr)
+    pred <- predict(fit, newdata = te)
+    obs  <- te[[trait]]
+    tibble(held_env = held_env, n_test = nrow(te),
+           r    = cor(pred, obs, use = "complete.obs"),
+           rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+  })
+}
+
+# ── Linear-model within-env 5-fold CV by GID (for NDVI baseline) ──────────
+linreg_wenv_cv <- function(data_raw, predictor, trait,
+                           n_folds = 5, n_reps = 3) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(env_i) {
+    env_df <- data_raw %>% filter(Env == env_i,
+                                  !is.na(.data[[predictor]]), !is.na(.data[[trait]]))
+    gids <- unique(env_df$GID)
+    if (length(gids) < n_folds) return(NULL)
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids <- gid_fold$GID[gid_fold$fold == f]
+        tr <- env_df %>% filter(!GID %in% test_gids)
+        te <- env_df %>% filter( GID %in% test_gids)
+        if (nrow(tr) < 5 || nrow(te) < 2) return(NULL)
+        fit  <- lm(as.formula(paste(trait, "~", predictor)), data = tr)
+        pred <- predict(fit, newdata = te)
+        obs  <- te[[trait]]
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = nrow(te),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── Helper: extract Synthetic VI values from a frozen encoder ─────────────
+extract_synvi <- function(model, df) {
+  if (nrow(df) == 0) return(numeric(0))
+  bands_t <- torch_tensor(as.matrix(df[, BAND_NAMES, drop = FALSE]),
+                          dtype = torch_float())
+  with_no_grad({
+    vi <- model$get_synthetic_vi(bands_t)$squeeze()
+    if (vi$dim() == 0L) vi <- vi$unsqueeze(1L)
+    as.numeric(vi$to(device = "cpu"))
+  })
+}
+
+# ── Variant B: pre-train on 4 envs → freeze encoder → fine-tune head ───────
+# Pre-trains on the other 4 environments, then for each fold within the target
+# environment freezes the encoder and fine-tunes only the prediction head and
+# environment embeddings on the adaptation (train) GIDs, then predicts the test GIDs.
+adapt_finetune_cv <- function(data_raw, trait, env_levels,
+                               n_folds        = 5,   n_reps         = 3,
+                               pretrain_epochs = 300, pretrain_lr    = 3e-3,
+                               finetune_epochs = 50,  finetune_lr    = 1e-3,
+                               batch_size      = 64) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+
+  map_dfr(envs, function(target_env) {
+    train_4env <- data_raw %>% filter(Env != target_env, !is.na(.data[[trait]]))
+    target_df  <- data_raw %>% filter(Env == target_env,  !is.na(.data[[trait]]))
+    gids       <- unique(target_df$GID)
+    if (nrow(train_4env) < 10 || length(gids) < n_folds) return(NULL)
+
+    # Scaler fit on 4 training environments — applied to adaptation & test folds too
+    sc_out   <- scale_from_train(train_4env, train_4env, trait)
+    train_sc <- sc_out$df
+    trait_mn <- sc_out$trait_mn
+    trait_sd <- sc_out$trait_sd
+
+    target_env_i <- match(target_env, env_levels)  # 1-based embedding index
+
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      # Step 1: pre-train on 4 environments
+      pretrained <- tryCatch(
+        train_model(train_sc, trait, env_levels = env_levels,
+                    epochs = pretrain_epochs, lr = pretrain_lr,
+                    batch_size = batch_size, seed = rep_i * 100L),
+        error = function(e) { message(target_env, " rep", rep_i, ": ", e$message); NULL }
+      )
+      if (is.null(pretrained)) return(NULL)
+
+      pretrained_state <- pretrained$state_dict()  # snapshot before any fine-tuning
+
+      # K-fold CV within target environment (by GID)
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids  <- gid_fold$GID[gid_fold$fold == f]
+        adapt_gids <- gids[!gids %in% test_gids]
+        adapt_df   <- target_df %>% filter(GID %in% adapt_gids)
+        test_df    <- target_df %>% filter(GID %in% test_gids)
+        if (nrow(adapt_df) < 5 || nrow(test_df) < 2) return(NULL)
+
+        # Scale with train_4env stats (bands 0-1, trait z-scored for head loss)
+        adapt_sc <- scale_from_train(adapt_df, train_4env, trait)$df
+        test_sc  <- scale_from_train(test_df,  train_4env, trait)$df
+
+        # Fresh model initialised from pre-trained weights (clean copy per fold)
+        model_ft <- SyntheticVIModel(n_bands = length(BAND_NAMES),
+                                      n_envs  = length(env_levels),
+                                      d_embed = 4L, pred_h = 8L)
+        model_ft$load_state_dict(pretrained_state)
+
+        # Freeze encoder — gradients disabled for all BandEncoder parameters
+        for (p in model_ft$encoder$parameters) p$requires_grad_(FALSE)
+
+        # Collect only trainable parameters (head + embeddings)
+        trainable <- list(
+          model_ft$env_emb$weight,
+          model_ft$pred_fc1$weight, model_ft$pred_fc1$bias,
+          model_ft$pred_fc2$weight, model_ft$pred_fc2$bias
+        )
+        opt_ft <- optim_adam(trainable, lr = finetune_lr, weight_decay = 1e-4)
+
+        adapt_ten     <- make_tensors(adapt_sc, trait)
+        n_adapt       <- adapt_ten$bands$size(1)
+        adapt_env_idx <- torch_tensor(rep(target_env_i, n_adapt), dtype = torch_long())
+
+        # Step 2: fine-tune head on adaptation fold
+        model_ft$train()
+        for (ep in seq_len(finetune_epochs)) {
+          idx_s <- sample(n_adapt)
+          for (i in seq(1, n_adapt, by = batch_size)) {
+            bi <- idx_s[i:min(i + batch_size - 1, n_adapt)]
+            # Recreate env index tensor directly to avoid 0D scalar from single-element indexing
+            ei <- torch_tensor(rep(target_env_i, length(bi)), dtype = torch_long())
+            opt_ft$zero_grad()
+            pred_ft <- model_ft(adapt_ten$bands[bi, , drop = FALSE], env_idx = ei)
+            loss <- nnf_mse_loss(pred_ft, adapt_ten$y[bi, , drop = FALSE])
+            loss$backward()
+            nn_utils_clip_grad_norm_(trainable, 1.0)
+            opt_ft$step()
+          }
+        }
+        model_ft$eval()
+
+        # Step 3: predict test fold
+        test_ten   <- make_tensors(test_sc, trait)
+        te_env_idx <- torch_tensor(
+          rep(target_env_i, test_ten$bands$size(1)), dtype = torch_long()
+        )
+        with_no_grad({
+          pred_z <- model_ft(test_ten$bands, env_idx = te_env_idx)$squeeze()$to(device = "cpu")
+        })
+        pred <- as.numeric(pred_z) * trait_sd + trait_mn
+        obs  <- as.numeric(test_ten$y$squeeze()) * trait_sd + trait_mn
+
+        tibble(Env = target_env, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── Variant C: pre-train on 4 envs → freeze encoder → linear regression ────
+# Pre-trains on the other 4 environments, extracts the Synthetic VI from the
+# frozen encoder, then fits a simple OLS (trait ~ SynVI) on the adaptation GIDs
+# and predicts the test GIDs. No gradient updates to the DNN in this stage.
+adapt_lm_cv <- function(data_raw, trait, env_levels,
+                         n_folds        = 5, n_reps      = 3,
+                         pretrain_epochs = 300, pretrain_lr = 3e-3,
+                         batch_size      = 64) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+
+  map_dfr(envs, function(target_env) {
+    train_4env <- data_raw %>% filter(Env != target_env, !is.na(.data[[trait]]))
+    target_df  <- data_raw %>% filter(Env == target_env,  !is.na(.data[[trait]]))
+    gids       <- unique(target_df$GID)
+    if (nrow(train_4env) < 10 || length(gids) < n_folds) return(NULL)
+
+    sc_out   <- scale_from_train(train_4env, train_4env, trait)
+    train_sc <- sc_out$df
+
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      # Step 1: pre-train encoder on 4 environments
+      pretrained <- tryCatch(
+        train_model(train_sc, trait, env_levels = env_levels,
+                    epochs = pretrain_epochs, lr = pretrain_lr,
+                    batch_size = batch_size, seed = rep_i * 100L),
+        error = function(e) { message(target_env, " rep", rep_i, ": ", e$message); NULL }
+      )
+      if (is.null(pretrained)) return(NULL)
+      pretrained$eval()
+
+      # K-fold CV within target environment (by GID)
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids  <- gid_fold$GID[gid_fold$fold == f]
+        adapt_gids <- gids[!gids %in% test_gids]
+        adapt_df   <- target_df %>% filter(GID %in% adapt_gids)
+        test_df    <- target_df %>% filter(GID %in% test_gids)
+        if (nrow(adapt_df) < 5 || nrow(test_df) < 2) return(NULL)
+
+        # Scale bands using train_4env scaler (encoder trained on this scale)
+        adapt_sc_bands <- scale_from_train(adapt_df, train_4env, trait)$df
+        test_sc_bands  <- scale_from_train(test_df,  train_4env, trait)$df
+
+        # Step 2: extract SynVI from frozen encoder (no gradient updates)
+        synvi_adapt <- extract_synvi(pretrained, adapt_sc_bands)
+        synvi_test  <- extract_synvi(pretrained, test_sc_bands)
+
+        # Step 3: fit OLS on original-scale trait ~ SynVI, predict test
+        adapt_y <- adapt_df[[trait]]
+        test_y  <- test_df[[trait]]
+
+        lm_fit <- lm(y ~ synvi, data.frame(y = adapt_y, synvi = synvi_adapt))
+        pred   <- predict(lm_fit, data.frame(synvi = synvi_test))
+
+        tibble(Env = target_env, fold = f, rep = rep_i, n_test = length(test_y),
+               r    = cor(pred, test_y, use = "complete.obs"),
+               rmse = sqrt(mean((pred - test_y)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+```
+
+```{r run-training, cache=TRUE}
+# ── Select traits with enough observations ────────────────────────────────
+min_obs <- 30
+usable_traits <- trait_cols[
+  sapply(trait_cols, function(t) sum(!is.na(model_data_raw[[t]]))) >= min_obs
+]
+cat("Traits with >=", min_obs, "observations:", length(usable_traits), "\n")
+print(usable_traits)
+
+usable_traits <- usable_traits[1]   # user selection – expand as needed
+
+# ── Environment levels: consistent ordering used for embedding indices ────
+env_levels <- sort(unique(as.character(model_data_raw$Env)))
+cat("Environment levels (embedding order):", paste(env_levels, collapse = ", "), "\n")
+
+# ── LOEO CV (raw data → per-fold scaling inside loeo_cv) ─────────────────
+cat("\nRunning LOEO CV...\n")
+cv_loeo <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- loeo_cv(model_data_raw, trait, env_levels = env_levels,
+                       n_reps = 3, epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait <- trait
+  res
+})
+cat("LOEO CV done. Rows:", nrow(cv_loeo), "\n")
+
+# ── Within-environment 5-fold CV (raw data → per-fold scaling inside) ────
+cat("\nRunning within-environment 5-fold CV...\n")
+cv_wenv <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- within_env_cv(model_data_raw, trait, env_levels = env_levels,
+                              n_folds = 5, n_reps = 3,
+                              epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait <- trait
+  res
+})
+cat("Within-env CV done. Rows:", nrow(cv_wenv), "\n")
+```
+
+```{r ndvi-baseline}
+# ── NDVI linear-regression baseline (same CV design as DNN) ─────────────
+if (!"NDVI_raw" %in% names(model_data_raw)) {
+  warning("NDVI_raw not found in model_data_raw — skipping NDVI baseline.")
+  ndvi_loeo <- tibble()
+  ndvi_wenv <- tibble()
+} else {
+  cat("Running NDVI LOEO baseline CV...\n")
+  ndvi_loeo <- map_dfr(usable_traits, function(trait) {
+    res       <- linreg_loeo_cv(model_data_raw, "NDVI_raw", trait)
+    res$trait <- trait
+    res
+  })
+  cat("NDVI LOEO done. Rows:", nrow(ndvi_loeo), "\n")
+
+  cat("Running NDVI within-env baseline CV...\n")
+  ndvi_wenv <- map_dfr(usable_traits, function(trait) {
+    res       <- linreg_wenv_cv(model_data_raw, "NDVI_raw", trait)
+    res$trait <- trait
+    res
+  })
+  cat("NDVI within-env done. Rows:", nrow(ndvi_wenv), "\n")
+}
+```
+
+```{r center-comparison}
+# ── Within-environment mean-centering comparison ───────────────────────────
+# For each band and the trait: subtract the environment mean (not SD-scaled).
+# NDVI is computed from original reflectances then centered by env mean NDVI.
+# At LOEO test time each environment is centered on its own mean, so no
+# information leaks between training and test environments.
+
+center_within_env <- function(data_raw, trait) {
+  data_raw %>%
+    group_by(Env) %>%
+    mutate(
+      across(all_of(BAND_NAMES), ~ . - mean(., na.rm = TRUE)),
+      !!trait        := .data[[trait]] - mean(.data[[trait]], na.rm = TRUE),
+      NDVI_centered  = NDVI_raw - mean(NDVI_raw, na.rm = TRUE)
+    ) %>%
+    ungroup()
+}
+
+trait <- usable_traits[1]
+
+# Build centered dataset from original (un-z-scored) reflectances
+model_data_centered <- center_within_env(
+  model_data_raw_orig %>% filter(Env != "MCG25"), trait
+)
+
+cat("Running DNN LOEO CV on centered data...\n")
+cv_loeo_centered <- map_dfr(usable_traits, function(tr) {
+  res       <- loeo_cv(model_data_centered, tr, env_levels = env_levels,
+                       n_reps = 3, epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait <- tr
+  res
+})
+cat("DNN centered LOEO done. Rows:", nrow(cv_loeo_centered), "\n")
+
+cat("Running NDVI LOEO CV on centered data...\n")
+ndvi_loeo_centered <- map_dfr(usable_traits, function(tr) {
+  res       <- linreg_loeo_cv(model_data_centered, "NDVI_centered", tr)
+  res$trait <- tr
+  res
+})
+cat("NDVI centered LOEO done. Rows:", nrow(ndvi_loeo_centered), "\n")
+```
+
+# Results: Cross-Validation Accuracy
+
+## Leave-One-Environment-Out (LOEO)
+
+```{r loeo-summary-table}
+loeo_fold <- cv_loeo %>%
+  filter(!is.na(r)) %>%
+  group_by(trait, held_env) %>%
+  summarise(r      = mean(r,      na.rm = TRUE),
+            rmse   = mean(rmse,   na.rm = TRUE),
+            n_test = first(n_test),
+            .groups = "drop")
+
+loeo_summary <- loeo_fold %>%
+  group_by(trait) %>%
+  summarise(mean_r    = mean(r,    na.rm = TRUE),
+            sd_r      = sd(r,     na.rm = TRUE),
+            mean_rmse = mean(rmse, na.rm = TRUE),
+            n_folds   = n(),
+            .groups   = "drop") %>%
+  arrange(desc(mean_r))
+
+loeo_summary %>%
+  kable(digits = 3,
+        col.names = c("Trait","Mean r","SD r","Mean RMSE","Folds"),
+        caption   = "LOEO CV: DNN Synthetic VI accuracy (mean over 5 held-out environments, 3 training reps each)") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE) %>%
+  column_spec(2, bold = TRUE,
+              color = ifelse(loeo_summary$mean_r > 0.5, "green", "black"))
+
+cat("\nPer-environment LOEO results:\n")
+loeo_fold %>%
+  arrange(trait, held_env) %>%
+  kable(digits = 3,
+        col.names = c("Trait","Held-out env","Mean r","Mean RMSE","N test"),
+        caption   = "LOEO CV per held-out environment") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r loeo-accuracy-plot, fig.height=5, fig.cap="LOEO CV: dots = training repetitions, crossbar = mean r"}
+cv_loeo %>%
+  filter(!is.na(r)) %>%
+  ggplot(aes(x = r, y = reorder(held_env, r, mean, na.rm = TRUE),
+             colour = held_env)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_jitter(height = 0.12, size = 2.5, alpha = 0.7) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.45,
+               colour = "black", linewidth = 0.7) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_brewer(palette = "Set2") +
+  labs(x = "Pearson r (LOEO)", y = "Held-out environment",
+       title  = "DNN Synthetic VI – LOEO Accuracy",
+       colour = "Environment") +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+## Within-Environment 5-Fold CV (by GID)
+
+```{r wenv-summary-table}
+wenv_fold_summ <- cv_wenv %>%
+  filter(!is.na(r)) %>%
+  group_by(trait, Env, fold) %>%
+  summarise(r    = mean(r,    na.rm = TRUE),
+            rmse = mean(rmse, na.rm = TRUE),
+            .groups = "drop")
+
+wenv_env_summary <- wenv_fold_summ %>%
+  group_by(trait, Env) %>%
+  summarise(mean_r    = mean(r,    na.rm = TRUE),
+            sd_r      = sd(r,     na.rm = TRUE),
+            mean_rmse = mean(rmse, na.rm = TRUE),
+            n_folds   = n(),
+            .groups   = "drop")
+
+wenv_summary <- wenv_env_summary %>%
+  group_by(trait) %>%
+  summarise(mean_r    = mean(mean_r,    na.rm = TRUE),
+            sd_r      = mean(sd_r,      na.rm = TRUE),
+            mean_rmse = mean(mean_rmse, na.rm = TRUE),
+            .groups   = "drop")
+
+wenv_summary %>%
+  kable(digits = 3,
+        col.names = c("Trait","Mean r","Mean within-env SD r","Mean RMSE"),
+        caption   = "Within-environment 5-fold CV (by GID): mean Pearson r across all environments and folds") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE) %>%
+  column_spec(2, bold = TRUE,
+              color = ifelse(wenv_summary$mean_r > 0.5, "green", "black"))
+
+cat("\nPer-environment within-env CV results:\n")
+wenv_env_summary %>%
+  arrange(trait, Env) %>%
+  kable(digits = 3,
+        col.names = c("Trait","Environment","Mean r","SD r","Mean RMSE","N folds"),
+        caption   = "Within-environment 5-fold CV: per-environment summary") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r wenv-accuracy-plot, fig.height=5, fig.cap="Within-env CV: dots = individual folds × reps, crossbar = mean r per environment"}
+cv_wenv %>%
+  filter(!is.na(r)) %>%
+  ggplot(aes(x = r, y = reorder(Env, r, mean, na.rm = TRUE),
+             colour = Env)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_jitter(height = 0.12, size = 2, alpha = 0.6) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.45,
+               colour = "black", linewidth = 0.7) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_brewer(palette = "Set2") +
+  labs(x = "Pearson r (within-env 5-fold CV by GID)", y = "Environment",
+       title  = "DNN Synthetic VI – Within-Environment CV Accuracy",
+       colour = "Environment") +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+## CV Scenario Comparison
+
+```{r cv-scenario-comparison}
+cv_scenario_tbl <- bind_rows(
+  loeo_summary  %>% select(trait, mean_r, sd_r, mean_rmse) %>% mutate(CV = "LOEO"),
+  wenv_summary  %>% select(trait, mean_r, sd_r, mean_rmse) %>% mutate(CV = "Within-env 5-fold")
+)
+
+cv_scenario_tbl %>%
+  arrange(trait, CV) %>%
+  kable(digits = 3,
+        col.names = c("Trait","Mean r","SD r","Mean RMSE","CV scenario"),
+        caption   = "DNN Synthetic VI: LOEO vs. within-environment CV") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r cv-scenario-plot, fig.height=4, fig.cap="LOEO vs. within-environment CV: mean Pearson r (error bar = SD across folds/envs)"}
+cv_scenario_tbl %>%
+  ggplot(aes(x = mean_r,
+             y = reorder(trait, mean_r, max, na.rm = TRUE),
+             colour = CV, shape = CV)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_errorbarh(aes(xmin = mean_r - sd_r, xmax = mean_r + sd_r),
+                 height = 0.2, alpha = 0.6) +
+  geom_point(size = 4) +
+  scale_colour_manual(values = c(LOEO = "#e34a33",
+                                 `Within-env 5-fold` = "#2c7bb6")) +
+  labs(x = "Mean Pearson r", y = NULL,
+       title  = "LOEO vs. within-environment CV accuracy",
+       colour = "CV scenario", shape = "CV scenario") +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+# NDVI Baseline Comparison
+
+NDVI-based linear regression was run under the same two CV schemes (LOEO and
+within-environment 5-fold CV by GID) as the DNN, operating on raw (unscaled)
+trait values so RMSE is directly comparable.
+
+## NDVI Baseline — LOEO
+
+```{r ndvi-loeo-table}
+if (nrow(ndvi_loeo) > 0) {
+  ndvi_loeo_fold <- ndvi_loeo %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, held_env) %>%
+    summarise(r    = mean(r,    na.rm = TRUE),
+              rmse = mean(rmse, na.rm = TRUE),
+              .groups = "drop")
+
+  ndvi_loeo_summary <- ndvi_loeo_fold %>%
+    group_by(trait) %>%
+    summarise(ndvi_r    = mean(r,    na.rm = TRUE),
+              ndvi_rmse = mean(rmse, na.rm = TRUE),
+              .groups = "drop")
+
+  ndvi_loeo_summary %>%
+    kable(digits = 3,
+          col.names = c("Trait", "NDVI mean r (LOEO)", "NDVI mean RMSE"),
+          caption   = "NDVI linear regression — LOEO accuracy") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE)
+} else {
+  cat("NDVI baseline not available.\n")
+}
+```
+
+## NDVI Baseline — Within-Environment 5-Fold CV
+
+```{r ndvi-wenv-table}
+if (nrow(ndvi_wenv) > 0) {
+  ndvi_wenv_fold <- ndvi_wenv %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env, fold) %>%
+    summarise(r    = mean(r,    na.rm = TRUE),
+              rmse = mean(rmse, na.rm = TRUE),
+              .groups = "drop")
+
+  ndvi_wenv_summary <- ndvi_wenv_fold %>%
+    group_by(trait, Env) %>%
+    summarise(mean_r    = mean(r,    na.rm = TRUE),
+              mean_rmse = mean(rmse, na.rm = TRUE),
+              .groups   = "drop") %>%
+    group_by(trait) %>%
+    summarise(ndvi_r    = mean(mean_r,    na.rm = TRUE),
+              ndvi_rmse = mean(mean_rmse, na.rm = TRUE),
+              .groups   = "drop")
+
+  ndvi_wenv_summary %>%
+    kable(digits = 3,
+          col.names = c("Trait", "NDVI mean r (within-env)", "NDVI mean RMSE"),
+          caption   = "NDVI linear regression — within-environment 5-fold CV accuracy") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE)
+} else {
+  cat("NDVI baseline not available.\n")
+}
+```
+
+## DNN Synthetic VI vs. NDVI — Combined Comparison
+
+```{r ndvi-dnn-comparison-table}
+if (nrow(ndvi_loeo) > 0 && nrow(ndvi_wenv) > 0) {
+  dnn_loeo_r  <- loeo_summary  %>% select(trait, dnn_loeo_r  = mean_r)
+  dnn_wenv_r  <- wenv_summary  %>% select(trait, dnn_wenv_r  = mean_r)
+  ndvi_loeo_r <- ndvi_loeo_summary %>% select(trait, ndvi_loeo_r = ndvi_r)
+  ndvi_wenv_r <- ndvi_wenv_summary %>% select(trait, ndvi_wenv_r = ndvi_r)
+
+  full_comparison <- dnn_loeo_r %>%
+    left_join(ndvi_loeo_r, by = "trait") %>%
+    left_join(dnn_wenv_r,  by = "trait") %>%
+    left_join(ndvi_wenv_r, by = "trait") %>%
+    mutate(delta_loeo = dnn_loeo_r - ndvi_loeo_r,
+           delta_wenv = dnn_wenv_r - ndvi_wenv_r)
+
+  full_comparison %>%
+    arrange(desc(delta_loeo)) %>%
+    kable(digits = 3,
+          col.names = c("Trait",
+                        "DNN r (LOEO)", "NDVI r (LOEO)", "Δr LOEO",
+                        "DNN r (within-env)", "NDVI r (within-env)", "Δr within-env"),
+          caption = "DNN Synthetic VI vs. NDVI linear regression — both CV scenarios") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE) %>%
+    column_spec(4, bold = TRUE,
+                color = ifelse(full_comparison$delta_loeo > 0, "forestgreen", "firebrick")) %>%
+    column_spec(7, bold = TRUE,
+                color = ifelse(full_comparison$delta_wenv > 0, "forestgreen", "firebrick"))
+}
+```
+
+```{r ndvi-dnn-comparison-plot, fig.height=5, fig.cap="DNN Synthetic VI vs. NDVI linear regression — Pearson r by CV scenario"}
+if (nrow(ndvi_loeo) > 0 && nrow(ndvi_wenv) > 0 && exists("full_comparison")) {
+  plot_df <- bind_rows(
+    full_comparison %>%
+      select(trait, r = dnn_loeo_r)  %>% mutate(model = "DNN Synthetic VI",    CV = "LOEO"),
+    full_comparison %>%
+      select(trait, r = ndvi_loeo_r) %>% mutate(model = "NDVI (linear)",       CV = "LOEO"),
+    full_comparison %>%
+      select(trait, r = dnn_wenv_r)  %>% mutate(model = "DNN Synthetic VI",    CV = "Within-env 5-fold"),
+    full_comparison %>%
+      select(trait, r = ndvi_wenv_r) %>% mutate(model = "NDVI (linear)",       CV = "Within-env 5-fold")
+  )
+
+  ggplot(plot_df,
+         aes(x = r, y = reorder(trait, r, max, na.rm = TRUE),
+             colour = model, shape = model)) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+    geom_point(size = 4, alpha = 0.9) +
+    geom_line(aes(group = interaction(trait, CV)), colour = "grey60",
+              linewidth = 0.5) +
+    facet_wrap(~CV, ncol = 2) +
+    scale_colour_manual(values = c("DNN Synthetic VI" = "#e34a33",
+                                   "NDVI (linear)"    = "#3182bd")) +
+    scale_shape_manual(values  = c("DNN Synthetic VI" = 16,
+                                   "NDVI (linear)"    = 17)) +
+    labs(x = "Mean Pearson r", y = NULL,
+         title  = "DNN Synthetic VI vs. NDVI baseline",
+         colour = NULL, shape = NULL) +
+    theme_bw(base_size = 13) +
+    theme(legend.position = "bottom")
+}
+```
+
+## Within-Environment Centering: 4-Way Comparison
+
+Compares LOEO accuracy across four modelling strategies: DNN and NDVI linear
+regression, each run on **uncentered** (per-env z-scored bands) and
+**within-centered** (env mean subtracted from bands and trait) data.
+
+```{r centering-comparison-table}
+# Summarise each of the four LOEO variants per environment
+summarise_loeo <- function(cv_df, label) {
+  cv_df %>%
+    filter(!is.na(r)) %>%
+    group_by(held_env) %>%
+    summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = label)
+}
+
+loeo_4way <- bind_rows(
+  summarise_loeo(cv_loeo,           "DNN (z-scored)"),
+  summarise_loeo(cv_loeo_centered,  "DNN (centered)"),
+  summarise_loeo(ndvi_loeo %>% rename(held_env = held_env),
+                 "NDVI linear (uncentered)"),
+  summarise_loeo(ndvi_loeo_centered %>% rename(held_env = held_env),
+                 "NDVI linear (centered)")
+)
+
+loeo_4way_wide <- loeo_4way %>%
+  pivot_wider(names_from = model, values_from = r) %>%
+  rename(Environment = held_env) %>%
+  bind_rows(
+    summarise(., across(where(is.numeric), ~ round(mean(., na.rm = TRUE), 3)),
+              Environment = "**Mean**")
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+loeo_4way_wide %>%
+  kable(digits = 3,
+        caption = "LOEO Pearson r — 4-way comparison: DNN vs. NDVI linear × uncentered vs. within-centered") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r centering-comparison-plot, fig.height=5, fig.cap="LOEO Pearson r by environment — 4 model variants"}
+loeo_4way %>%
+  mutate(model = factor(model,
+                        levels = c("DNN (z-scored)", "DNN (centered)",
+                                   "NDVI linear (uncentered)", "NDVI linear (centered)"))) %>%
+  ggplot(aes(x = r, y = reorder(held_env, r, mean, na.rm = TRUE),
+             colour = model, shape = model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_point(size = 4, alpha = 0.9) +
+  scale_colour_manual(values = c("DNN (z-scored)"          = "#e34a33",
+                                 "DNN (centered)"           = "#fc8d59",
+                                 "NDVI linear (uncentered)" = "#2166ac",
+                                 "NDVI linear (centered)"   = "#74add1")) +
+  scale_shape_manual(values  = c("DNN (z-scored)"          = 16,
+                                 "DNN (centered)"           = 17,
+                                 "NDVI linear (uncentered)" = 15,
+                                 "NDVI linear (centered)"   = 18)) +
+  labs(x = "LOEO Pearson r", y = "Held-out environment",
+       title  = "LOEO accuracy: DNN vs. NDVI × uncentered vs. within-centered",
+       colour = NULL, shape = NULL) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+# Transfer Learning: Two-Stage Adaptation CV
+
+Both variants share the same outer structure: **pre-train** the full model on the
+four non-target environments, then perform K-fold CV **within** the target
+environment using the pre-trained encoder.
+
+- **Variant B (fine-tune head)**: the encoder is frozen; only the prediction head
+  and environment embeddings are updated on the adaptation (train) GIDs.
+  The target environment's embedding was never seen during pre-training, so it
+  starts from its random initialisation and is calibrated during fine-tuning.
+
+- **Variant C (SynVI + linear)**: the encoder is completely frozen; the Synthetic
+  VI is extracted for every observation, and a simple OLS (trait ~ SynVI) is fit
+  on the adaptation GIDs and used to predict the test GIDs — no further neural
+  network training.
+
+Both are compared to the standard within-environment 5-fold CV that trains from
+scratch on each fold.
+
+```{r run-adaptation-cv, cache=TRUE}
+cat("Running Variant B: freeze encoder, fine-tune head...\n")
+cv_adapt_finetune <- map_dfr(usable_traits, function(tr) {
+  cat("  trait:", tr, "\n")
+  res       <- adapt_finetune_cv(model_data_raw, tr, env_levels = env_levels,
+                                  n_folds        = 5,   n_reps         = 3,
+                                  pretrain_epochs = 300, pretrain_lr    = 3e-3,
+                                  finetune_epochs = 50,  finetune_lr    = 1e-3,
+                                  batch_size      = 64)
+  res$trait <- tr
+  res
+})
+cat("Variant B done. Rows:", nrow(cv_adapt_finetune), "\n")
+
+cat("\nRunning Variant C: freeze encoder, linear regression on SynVI...\n")
+cv_adapt_lm <- map_dfr(usable_traits, function(tr) {
+  cat("  trait:", tr, "\n")
+  res       <- adapt_lm_cv(model_data_raw, tr, env_levels = env_levels,
+                            n_folds        = 5,   n_reps      = 3,
+                            pretrain_epochs = 300, pretrain_lr = 3e-3,
+                            batch_size      = 64)
+  res$trait <- tr
+  res
+})
+cat("Variant C done. Rows:", nrow(cv_adapt_lm), "\n")
+```
+
+```{r adapt-summary-table}
+summarise_adapt_env <- function(cv_df, label) {
+  cv_df %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>%
+    summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = label)
+}
+
+adapt_comparison <- bind_rows(
+  cv_wenv %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>%
+    summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "Within-env (train from scratch)"),
+  summarise_adapt_env(cv_adapt_finetune, "Adapt B: fine-tune head"),
+  summarise_adapt_env(cv_adapt_lm,       "Adapt C: SynVI + linear")
+)
+
+adapt_overall <- adapt_comparison %>%
+  group_by(trait, model) %>%
+  summarise(mean_r = round(mean(r, na.rm = TRUE), 3),
+            sd_r   = round(sd(r,   na.rm = TRUE), 3),
+            .groups = "drop") %>%
+  arrange(trait, model)
+
+adapt_overall %>%
+  kable(digits = 3,
+        col.names = c("Trait", "Model", "Mean r", "SD r (across envs)"),
+        caption = "Two-stage adaptation CV: mean within-environment Pearson r") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+
+cat("\nPer-environment breakdown:\n")
+adapt_comparison %>%
+  pivot_wider(names_from = model, values_from = r) %>%
+  mutate(across(where(is.numeric), ~ round(., 3))) %>%
+  arrange(trait, Env) %>%
+  kable(digits = 3,
+        caption = "Pearson r per environment — three within-env CV strategies") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+```{r adapt-comparison-plot, fig.height=5, fig.cap="Two-stage adaptation CV vs. standard within-env CV: Pearson r per environment"}
+adapt_comparison %>%
+  mutate(model = factor(model,
+                        levels = c("Within-env (train from scratch)",
+                                   "Adapt B: fine-tune head",
+                                   "Adapt C: SynVI + linear"))) %>%
+  ggplot(aes(x = r, y = reorder(Env, r, mean, na.rm = TRUE),
+             colour = model, shape = model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_point(size = 4, alpha = 0.9) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_manual(values = c(
+    "Within-env (train from scratch)" = "#2166ac",
+    "Adapt B: fine-tune head"         = "#e34a33",
+    "Adapt C: SynVI + linear"         = "#1a9850"
+  )) +
+  scale_shape_manual(values = c(
+    "Within-env (train from scratch)" = 16,
+    "Adapt B: fine-tune head"         = 17,
+    "Adapt C: SynVI + linear"         = 15
+  )) +
+  labs(x = "Pearson r (within-env K-fold CV)", y = "Target environment",
+       title  = "Two-stage adaptation CV vs. standard within-env training",
+       colour = NULL, shape = NULL) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+# Full-Data Models and Synthetic VI Extraction
+
+One final model per trait is trained on **all five groups** (no held-out fold).
+These models are used to (a) extract the Synthetic VI for every observation and
+(b) derive the VI formula from the learned encoder weights.
+
+```{r extract-synthetic-vi}
+full_models <- map(usable_traits, function(trait) {
+  cat("Training full model – trait:", trait, "\n")
+  tryCatch(
+    train_model(model_data, trait, env_levels = env_levels,
+                epochs = 300, lr = 3e-3, batch_size = 64, seed = 42L),
+    error = function(e) { message(e$message); NULL }
+  )
+}) %>% set_names(usable_traits)
+
+synvi_rows <- map_dfr(usable_traits, function(trait) {
+  model <- full_models[[trait]]
+  if (is.null(model)) return(NULL)
+  df <- model_data %>% filter(!is.na(.data[[trait]]))
+  bands_t <- torch_tensor(as.matrix(df[, BAND_NAMES, drop = FALSE]),
+                          dtype = torch_float())
+  with_no_grad({
+    vi_vals <- model$get_synthetic_vi(bands_t)$squeeze()$to(device = "cpu")
+  })
+  df %>%
+    select(Env, Timepoint, group) %>%
+    mutate(SynVI = as.numeric(vi_vals), trait = trait)
+})
+
+cat("Synthetic VI extraction complete. Rows:", nrow(synvi_rows), "\n")
+```
+
+```{r synthetic-vi-distributions, fig.height=6, fig.cap="Synthetic VI distributions by Timepoint and Environment, per trait"}
+synvi_rows %>%
+  ggplot(aes(x = SynVI, fill = Env)) +
+  geom_density(alpha = 0.5) +
+  facet_grid(trait ~ Timepoint, scales = "free") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = "Synthetic VI value", y = "Density",
+       title = "Synthetic VI distributions by Timepoint × Environment",
+       fill  = "Environment") +
+  theme_bw(base_size = 10) +
+  theme(strip.text.y = element_text(size = 7))
+```
+
+# Band Sensitivity Analysis
+
+To interpret *which* raw bands drive each Synthetic VI we compute the gradient
+of the encoder output with respect to each band input (averaged over all samples).
+
+```{r sensitivity-analysis}
+# Use the full-data models for gradient-based band importance
+sensitivity_list <- map_dfr(usable_traits, function(trait) {
+  model <- full_models[[trait]]
+  if (is.null(model)) return(NULL)
+  df <- model_data %>% filter(!is.na(.data[[trait]]))
+  bands_t <- torch_tensor(
+    as.matrix(df[, BAND_NAMES, drop = FALSE]),
+    dtype = torch_float(), requires_grad = TRUE
+  )
+  vi <- model$encoder(bands_t)
+  vi$sum()$backward()
+  grads    <- as.matrix(bands_t$grad$to(device = "cpu"))
+  abs_mean <- colMeans(abs(grads))
+  tibble(trait = trait,
+         band  = BAND_NAMES,
+         importance = abs_mean / sum(abs_mean))
+})
+
+cat("Sensitivity analysis complete.\n")
+```
+
+```{r sensitivity-heatmap, fig.cap="Normalised band importance for each Synthetic VI (gradient-based)"}
+if (!is.null(sensitivity_list) && nrow(sensitivity_list) > 0) {
+  imp_wide <- sensitivity_list %>%
+    pivot_wider(names_from = band, values_from = importance)
+
+  imp_mat <- as.matrix(imp_wide[, BAND_NAMES])
+  rownames(imp_mat) <- imp_wide$trait
+
+    sensitivity_list %>%
+      ggplot(aes(x = band, y = reorder(trait, importance),
+                 fill = importance)) +
+      geom_tile(colour = "white") +
+      scale_fill_gradient(low = "white", high = "#2166AC") +
+      labs(x = "Spectral Band", y = "Trait",
+           fill  = "Importance",
+           title = "Relative Band Importance for each Synthetic VI") +
+      theme_bw(base_size = 11)
+  }
+
+```
+
+```{r sensitivity-barplot, fig.cap="Band importance profiles per trait"}
+if (!is.null(sensitivity_list) && nrow(sensitivity_list) > 0) {
+  ggplot(sensitivity_list,
+         aes(x = band, y = importance, fill = band)) +
+    geom_col() +
+    facet_wrap(~trait, ncol = 3) +
+    scale_fill_manual(values = c(blue="steelblue", green="#2ca25f",
+                                 red="#e34a33", red_edge="#f768a1",
+                                 nir="#8856a7")) +
+    labs(x = "Band", y = "Normalised gradient importance",
+         title = "Per-trait spectral band importance") +
+    theme_bw(base_size = 11) +
+    theme(axis.text.x  = element_text(angle = 30, hjust = 1),
+          legend.position = "none")
+}
+```
+
+# Synthetic VI Formula
+
+The Synthetic VI is defined by the three learned linear layers of the encoder:
+
+$$
+\mathbf{h}_1 = \text{ReLU}(\mathbf{W}_1 \mathbf{x} + \mathbf{b}_1), \quad
+\mathbf{h}_2 = \text{ReLU}(\mathbf{W}_2 \mathbf{h}_1 + \mathbf{b}_2), \quad
+\text{SynVI} = \mathbf{w}_3^\top \mathbf{h}_2 + b_3
+$$
+
+where $\mathbf{x} = [\text{blue, green, red, red\_edge, nir}]^\top$ are the
+min-max scaled band values. The tables below show the extracted weights for each
+trait's full-data model.
+
+```{r vi-formula, results="asis"}
+for (trait in usable_traits) {
+  model <- full_models[[trait]]
+  if (is.null(model)) next
+
+  cat("\n\n## Trait:", trait, "\n\n")
+
+  # ── Extract layer weights ──────────────────────────────────────────────
+  W1 <- as.matrix(model$encoder$fc1$weight$to(device="cpu")$detach())
+  b1 <- as.numeric(model$encoder$fc1$bias$to(device="cpu")$detach())
+  W2 <- as.matrix(model$encoder$fc2$weight$to(device="cpu")$detach())
+  b2 <- as.numeric(model$encoder$fc2$bias$to(device="cpu")$detach())
+  W3 <- as.numeric(model$encoder$fc3$weight$to(device="cpu")$detach())
+  b3 <- as.numeric(model$encoder$fc3$bias$to(device="cpu")$detach())
+
+  # W1: shape (16, n_bands)
+  colnames(W1) <- BAND_NAMES
+  rownames(W1) <- paste0("h1[", seq_len(nrow(W1)), "]")
+
+  cat("**Layer 1 weights** W1 (16 × n_bands) and bias b1:\n\n")
+  print(kable(round(cbind(W1, bias = b1), 4), format = "html") %>%
+        kable_styling(bootstrap_options = c("striped","condensed"),
+                      full_width = FALSE, font_size = 10))
+
+  # W2: shape (8, 16)
+  rownames(W2) <- paste0("h2[", seq_len(nrow(W2)), "]")
+  colnames(W2) <- paste0("h1[", seq_len(ncol(W2)), "]")
+
+  cat("\n\n**Layer 2 weights** W2 (8 × 16) and bias b2:\n\n")
+  print(kable(round(cbind(W2, bias = b2), 4), format = "html") %>%
+        kable_styling(bootstrap_options = c("striped","condensed"),
+                      full_width = FALSE, font_size = 10))
+
+  # W3: shape (1, 8) → output weights
+  w3_df <- tibble(node = paste0("h2[", seq_along(W3), "]"),
+                  weight = round(W3, 4))
+  cat("\n\n**Layer 3 weights** w3 (1 × 8) and bias b3 =", round(b3, 4), ":\n\n")
+  print(kable(w3_df, format = "html",
+              col.names = c("Hidden node h2","Output weight")) %>%
+        kable_styling(bootstrap_options = c("striped","condensed"),
+                      full_width = FALSE, font_size = 10))
+
+  # ── Effective linear sensitivity (first-order Taylor approx) ───────────
+  # Compute mean input, propagate through network, get gradient
+  df_trait  <- model_data %>% filter(!is.na(.data[[trait]]))
+  mean_bands <- colMeans(df_trait[, BAND_NAMES])
+  bands_t    <- torch_tensor(matrix(mean_bands, nrow = 1),
+                             dtype = torch_float(), requires_grad = TRUE)
+  vi_val <- model$encoder(bands_t)
+  vi_val$backward()
+  sens <- as.numeric(bands_t$grad$to(device="cpu"))
+  sens_df <- tibble(Band = BAND_NAMES,
+                    `dVI/dBand (at mean)` = round(sens, 4),
+                    `|Sensitivity|`       = round(abs(sens), 4)) %>%
+    arrange(desc(`|Sensitivity|`))
+
+  cat("\n\n**Linearised sensitivity** (gradient at mean band values):\n\n")
+  print(kable(sens_df, format = "html") %>%
+        kable_styling(bootstrap_options = c("striped","condensed"),
+                      full_width = FALSE))
+
+  # ── Approximate explicit formula (top 3 bands, linear approx) ──────────
+  top3 <- sens_df$Band[1:min(3, nrow(sens_df))]
+  coef_str <- paste(
+    sprintf("%+.4f × %s", sens_df$`dVI/dBand (at mean)`[match(top3, sens_df$Band)], top3),
+    collapse = " "
+  )
+  cat(sprintf(
+    "\n\n**Approximate linear formula** (linearised around band means):\n\n$$\\text{SynVI}_{%s} \\approx %.4f %s + \\text{const}$$\n\n",
+    trait, 0, coef_str
+  ))
+}
+```
+
+# Comparison: Synthetic VI vs. Standard VIs
+
+For each standard VI and trait the same LOGO scheme is used (train on 4 groups,
+test on 5th) with a simple linear regression baseline.
+
+```{r standard-vi-cv}
+# LOGO linear regression benchmark for each standard VI × trait
+linreg_logo_cv <- function(data, vi, trait) {
+  map_dfr(group_levels_all, function(held_out) {
+    tr <- data %>% filter(group != held_out,
+                          !is.na(.data[[vi]]), !is.na(.data[[trait]]))
+    te <- data %>% filter(group == held_out,
+                          !is.na(.data[[vi]]), !is.na(.data[[trait]]))
+    if (nrow(tr) < 10 || nrow(te) < 2) return(NULL)
+    fit  <- lm(as.formula(paste(trait, "~", vi)), data = tr)
+    pred <- predict(fit, newdata = te)
+    tibble(held_out = held_out,
+           r = cor(pred, te[[trait]], use = "complete.obs"))
+  }) %>%
+  summarise(mean_r = mean(r, na.rm = TRUE)) %>%
+  pull(mean_r)
+}
+
+if (length(vi_cols) > 0) {
+  cat("Computing standard VI baselines for", length(vi_cols), "VIs ×",
+      length(usable_traits), "traits ...\n")
+  std_vi_results <- expand_grid(vi = vi_cols, trait = usable_traits) %>%
+    mutate(mean_r = map2_dbl(vi, trait,
+                             ~linreg_logo_cv(model_data, .x, .y)))
+
+  best_std_vi <- std_vi_results %>%
+    group_by(trait) %>%
+    slice_max(mean_r, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    rename(best_vi = vi, std_r = mean_r)
+
+  comparison <- loeo_summary %>%
+    select(trait, syn_r = mean_r) %>%
+    left_join(best_std_vi, by = "trait") %>%
+    mutate(improvement = syn_r - std_r)
+
+  comparison %>%
+    arrange(desc(improvement)) %>%
+    kable(digits = 3,
+          col.names = c("Trait","DNN Synthetic VI r","Best std VI","Std VI r","Δr"),
+          caption = "DNN Synthetic VI vs. best standard VI (LOEO mean Pearson r)") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE) %>%
+    column_spec(5,
+                bold  = TRUE,
+                color = ifelse(comparison$improvement > 0, "green", "red"))
+}
+```
+
+```{r comparison-plot, fig.cap="Prediction accuracy: Synthetic VI vs. best standard VI"}
+if (length(vi_cols) > 0 && exists("comparison")) {
+  comparison %>%
+    pivot_longer(c(syn_r, std_r),
+                 names_to = "type", values_to = "r") %>%
+    mutate(type = recode(type, syn_r = "Synthetic VI (DNN)",
+                               std_r = "Best standard VI (linear)"),
+           trait = reorder(trait, ifelse(type == "Synthetic VI (DNN)", r, NA),
+                           mean, na.rm = TRUE)) %>%
+    ggplot(aes(x = r, y = trait, colour = type, shape = type)) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+    geom_point(size = 4, alpha = 0.9) +
+    geom_line(aes(group = trait), colour = "grey60", linewidth = 0.5) +
+    scale_colour_manual(values = c("Synthetic VI (DNN)"    = "#e34a33",
+                                   "Best standard VI (linear)" = "#3182bd")) +
+    labs(x = "Mean LOEO r", y = NULL,
+         title  = "Prediction accuracy: DNN Synthetic VI vs. Standard VIs (LOEO)",
+         colour = NULL, shape = NULL) +
+    theme_bw(base_size = 13) +
+    theme(legend.position = "bottom")
+}
+```
+
+# Synthetic VI Correlations with Standard VIs
+
+```{r synvi-stdvi-corr, fig.cap="Correlation between Synthetic VIs (per-trait) and standard VIs"}
+if (length(vi_cols) > 0 && nrow(synvi_rows) > 0) {
+  # Join synthetic VI values back to model_data for standard VI columns
+  synvi_wide <- synvi_rows %>%
+    select(Env, Timepoint, group, trait, SynVI) %>%
+    pivot_wider(names_from = trait, values_from = SynVI,
+                names_prefix = "SynVI_",
+                values_fn = mean)   # average if >1 row per cell
+
+  stdvi_sub <- model_data %>%
+    select(Env, Timepoint, group, all_of(vi_cols)) %>%
+    group_by(Env, Timepoint, group) %>%
+    summarise(across(all_of(vi_cols), mean, na.rm = TRUE), .groups = "drop")
+
+  joined <- left_join(synvi_wide, stdvi_sub, by = c("Env","Timepoint","group"))
+
+  synvi_trait_cols <- names(joined)[startsWith(names(joined), "SynVI_")]
+  if (length(synvi_trait_cols) > 0 && length(vi_cols) > 0) {
+    cor_mat  <- cor(joined[, c(vi_cols, synvi_trait_cols)],
+                    use = "pairwise.complete.obs")
+    sub_cor  <- cor_mat[vi_cols, synvi_trait_cols, drop = FALSE]
+    colnames(sub_cor) <- str_remove(colnames(sub_cor), "SynVI_")
+    corrplot(sub_cor, method = "color",
+             col  = colorRampPalette(c("#2166AC","white","#B2182B"))(200),
+             tl.cex = 0.8, cl.cex = 0.7,
+             addCoef.col = "black", number.cex = 0.65,
+             title = "r(Standard VI, Synthetic VI)", mar = c(0,0,2,0))
+  }
+}
+```
+
+# Summary
+
+```{r summary-table}
+final_summary <- loeo_summary %>%
+  left_join(
+    wenv_summary %>% select(trait, wenv_r = mean_r),
+    by = "trait"
+  ) %>%
+  left_join(
+    sensitivity_list %>%
+      group_by(trait) %>%
+      slice_max(importance, n = 1, with_ties = FALSE) %>%
+      select(trait, top_band = band),
+    by = "trait"
+  ) %>%
+  arrange(desc(mean_r))
+
+final_summary %>%
+  kable(digits = 3,
+        col.names = c("Trait","LOEO r","SD r","LOEO RMSE","N folds",
+                      "Within-env r","Top band"),
+        caption = "Summary: DNN Synthetic VI – LOEO and within-environment CV accuracy with dominant spectral band") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r session-info}
+sessionInfo()
+```
+

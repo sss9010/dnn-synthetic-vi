@@ -1,0 +1,6203 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="workflowr" />
+
+
+<title>DNN-Derived Synthetic Vegetation Index for Phenotype Prediction</title>
+
+<script src="site_libs/header-attrs-2.31/header-attrs.js"></script>
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<script src="site_libs/navigation-1.1/codefolding.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+<script src="site_libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="site_libs/lightable-0.0.1/lightable.css" rel="stylesheet" />
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/main/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark the anchor link active (and if it's in a dropdown, also mark that active)
+  var dropdown = menuAnchor.closest('li.dropdown');
+  if (window.bootstrap) { // Bootstrap 4+
+    menuAnchor.addClass('active');
+    dropdown.find('> .dropdown-toggle').addClass('active');
+  } else { // Bootstrap 3
+    menuAnchor.parent().addClass('active');
+    dropdown.addClass('active');
+  }
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-bs-toggle="collapse" data-target="#navbar" data-bs-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">NY_WMB</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+</ul>
+</div>
+
+
+
+<h1 class="title toc-ignore">DNN-Derived Synthetic Vegetation Index for
+Phenotype Prediction</h1>
+<h4 class="author">workflowr</h4>
+<h4 class="date">2026-05-21 10:44:00.617952</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span>
+workflowr <span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span
+class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> </a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2026-05-21
+</p>
+<p>
+<strong>Checks:</strong> <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 5
+<span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> 2
+</p>
+<p>
+<strong>Knit directory:</strong> <code>NY_WMBCL/</code> <span
+class="glyphicon glyphicon-question-sign" aria-hidden="true"
+title="This is the local directory in which the code in this file was executed.">
+</span>
+</p>
+<p>
+This reproducible <a href="https://rmarkdown.rstudio.com">R Markdown</a>
+analysis was created with <a
+  href="https://github.com/workflowr/workflowr">workflowr</a> (version
+1.7.2). The <em>Checks</em> tab describes the reproducibility checks
+that were applied when the results were created. The <em>Past
+versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguncommittedchanges">
+<span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> <strong>R Markdown file:</strong> uncommitted
+changes </a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguncommittedchanges"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>The R Markdown file has unstaged changes. To know which version of
+the R Markdown file created these results, you’ll want to first commit
+it to the Git repo. If you’re still working on the analysis, you can
+ignore this warning. When you’re finished, you can run
+<code>wflow_publish</code> to commit the R Markdown file and build the
+HTML.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the
+global environment can affect the analysis in your R Markdown file in
+unknown ways. For reproduciblity it’s best to always run the code in an
+empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20250129code">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Seed:</strong>
+<code>set.seed(20250129)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20250129code"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20250129)</code> was run prior to running
+the code in the R Markdown file. Setting a seed ensures that any results
+that rely on randomness, e.g. subsampling or permutations, are
+reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Session information:</strong>
+recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package
+versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be
+confident that you successfully produced the results during this
+run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongabsolute">
+<span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> <strong>File paths:</strong> absolute </a>
+</p>
+</div>
+<div id="strongFilepathsstrongabsolute" class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Using absolute paths to the files within your workflowr project makes it
+difficult for you and others to run your code on a different machine.
+Change the absolute path(s) below to the suggested relative path(s) to
+make your code more reproducible.
+</p>
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th style="text-align:left;">
+absolute
+</th>
+<th style="text-align:left;">
+relative
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+C:/Users/Siim Sepp/NY_WMBCL/data/WMB_pheno.Rdata
+</td>
+<td style="text-align:left;">
+data/WMB_pheno.Rdata
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomsss9010NYWMBCLtree9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775targetblank9dd9bcca">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Repository version:</strong>
+<a href="https://github.com/sss9010/NY_WMBCL/tree/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775" target="_blank">9dd9bcc</a>
+</a>
+</p>
+</div>
+<div
+id="strongRepositoryversionstrongahrefhttpsgithubcomsss9010NYWMBCLtree9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775targetblank9dd9bcca"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development
+and connecting the code version to the results is critical for
+reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version
+<a href="https://github.com/sss9010/NY_WMBCL/tree/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775" target="_blank">9dd9bcc</a>.
+See the <em>Past versions</em> tab to see a history of the changes made
+to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for
+the analysis have been committed to Git prior to generating the results
+(you can use <code>wflow_publish</code> or
+<code>wflow_git_commit</code>). workflowr only checks the R Markdown
+file, but you know if there are other scripts or data files that it
+depends on. Below is the status of the Git repository when the results
+were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rproj.user/99DC6967/bibliography-index/
+    Ignored:    .Rproj.user/99DC6967/ctx/
+    Ignored:    .Rproj.user/99DC6967/explorer-cache/
+    Ignored:    .Rproj.user/99DC6967/presentation/
+    Ignored:    .Rproj.user/99DC6967/profiles-cache/
+    Ignored:    .Rproj.user/99DC6967/sources/per/
+    Ignored:    .Rproj.user/99DC6967/tutorial/
+    Ignored:    .Rproj.user/99DC6967/unsaved-notebooks/
+    Ignored:    .Rproj.user/99DC6967/viewer-cache/
+    Ignored:    .Rproj.user/shared/notebooks/05EEDF6A-9. MT_GP/
+    Ignored:    .Rproj.user/shared/notebooks/07D5E585-12. Prediction_plots/
+    Ignored:    .Rproj.user/shared/notebooks/7BC35D1D-4. Exploratory_pheno_ analysis/
+    Ignored:    .Rproj.user/shared/notebooks/883CCBC3-pheno_corr/
+    Ignored:    .Rproj.user/shared/notebooks/8F2317AD-2. Trait heritability analysis_EXP/
+    Ignored:    .Rproj.user/shared/notebooks/BE3232F6-4. Exploratory_pheno_ analysis/
+    Ignored:    .Rproj.user/shared/notebooks/FA723D52-7. PP_ag_mq/
+    Ignored:    OREI Genotyping/.RData
+    Ignored:    OREI Genotyping/.Rhistory
+    Ignored:    OREI Genotyping/G_data/.Rhistory
+
+Untracked files:
+    Untracked:  build_adapt.log
+    Untracked:  build_dnn_vi.log
+    Untracked:  ndvi_corr.R
+    Untracked:  variance_partition.R
+
+Unstaged changes:
+    Modified:   .claude/settings.local.json
+    Modified:   OREI Genotyping/OREI_Genotyping_X/UWMad2024Gutierrez-B3K_01-06-Samples.txt
+    Deleted:    OREI Genotyping/~$3K_MAS_SNPs.xlsx
+    Modified:   analysis/13.DNN_Synthetic_VI.Rmd
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not
+included in this status report because it is ok for generated content to
+have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+<p>
+These are the previous versions of the repository in which changes were
+made to the R Markdown (<code>analysis/13.DNN_Synthetic_VI.Rmd</code>)
+and HTML (<code>docs/13.DNN_Synthetic_VI.html</code>) files. If you’ve
+configured a remote Git repository (see <code>?wflow_git_remote</code>),
+click on the hyperlinks in the table below to view the files as they
+were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/analysis/13.DNN_Synthetic_VI.Rmd" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+<td>
+Add environment embedding to DNN prediction head
+</td>
+</tr>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/sss9010/NY_WMBCL/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/13.DNN_Synthetic_VI.html" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+<td>
+Add environment embedding to DNN prediction head
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/analysis/13.DNN_Synthetic_VI.Rmd" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+<td>
+Add per-environment spectral standardisation to DNN Synthetic VI
+</td>
+</tr>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/sss9010/NY_WMBCL/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/13.DNN_Synthetic_VI.html" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+<td>
+Add per-environment spectral standardisation to DNN Synthetic VI
+</td>
+</tr>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/sss9010/NY_WMBCL/1edea2618cb3add0121a058da053dd46040e92e8/docs/13.DNN_Synthetic_VI.html" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+<td>
+Rebuild HTML with NDVI baseline comparison section
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/f4746c184840c2b0968bb3fbefa4f5f83a7d226d/analysis/13.DNN_Synthetic_VI.Rmd" target="_blank">f4746c1</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+<td>
+Add NDVI linear regression baseline comparison to DNN Synthetic VI
+analysis
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/analysis/13.DNN_Synthetic_VI.Rmd" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+<td>
+s
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/ba3880e45dba8956b19244a64699c7a08607aa6d/analysis/13.DNN_Synthetic_VI.Rmd" target="_blank">ba3880e</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+<td>
+Add LOEO and within-environment 5-fold CV to DNN Synthetic VI analysis
+</td>
+</tr>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/sss9010/NY_WMBCL/ba3880e45dba8956b19244a64699c7a08607aa6d/docs/13.DNN_Synthetic_VI.html" target="_blank">ba3880e</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+<td>
+Add LOEO and within-environment 5-fold CV to DNN Synthetic VI analysis
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<div id="overview" class="section level1" number="1">
+<h1><span class="header-section-number">1</span> Overview</h1>
+<p>This script uses a deep neural network (DNN) to derive
+<strong>data-driven vegetation indices</strong> from raw multispectral
+drone imagery for the NY Winter Malting Barley breeding programme.</p>
+<div id="what-it-does" class="section level2" number="1.1">
+<h2><span class="header-section-number">1.1</span> What it does</h2>
+<p>Standard vegetation indices (NDVI, NDRE, etc.) are fixed,
+hand-crafted combinations of spectral bands designed for generic
+vegetation monitoring. Here, we instead <strong>let the data determine
+the optimal band combination</strong> for each agronomic or malt-quality
+trait. The result is a trait-specific <strong>Synthetic VI</strong> — a
+scalar value computed from the five raw bands (blue, green, red,
+red_edge, nir) that maximises predictive accuracy for that trait.</p>
+<p>A separate model is trained for each phenotype trait, yielding a
+distinct Synthetic VI per trait. After model training, the learned
+encoder weights are extracted and presented as an explicit mathematical
+formula so the index can be computed directly from band reflectances
+without re-running the DNN.</p>
+</div>
+<div id="modelling-approach" class="section level2" number="1.2">
+<h2><span class="header-section-number">1.2</span> Modelling
+approach</h2>
+<p>The DNN has a <strong>bottleneck architecture</strong> with two
+components:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Band Encoder</strong> (5 → 16 → 8 → 1): three
+fully-connected layers with ReLU activations compress the five bands
+into a single scalar — the Synthetic VI. The final layer has no
+activation, so the index spans the full real line.</p></li>
+<li><p><strong>Prediction Head</strong> (1 → 8 → 1): maps the Synthetic
+VI through one hidden layer to the trait value.</p></li>
+</ol>
+<p>The bottleneck forces all spectral information through a single
+neuron before prediction, mimicking the structure of hand-crafted
+indices (e.g. NDVI uses a single derived value) while allowing
+non-linear, data-optimised band combinations. Only five specific
+Timepoint × Environment groups are used, one per trial year,
+representing the flight timing judged most informative per environment:
+<code>HELF24_TP7</code>, <code>KET21_TP4</code>, <code>MCG23_TP5</code>,
+<code>MCG25_TP12</code>, <code>SNY22_TP6</code>.</p>
+</div>
+<div id="cross-validation" class="section level2" number="1.3">
+<h2><span class="header-section-number">1.3</span> Cross-validation</h2>
+<p>Two complementary CV scenarios are implemented. In both, splits are
+by <strong>GID</strong> (genotype ID) to prevent data leakage, and
+scalers are fit on training data only then applied to test folds.</p>
+<div id="leave-one-environment-out-loeo" class="section level3"
+number="1.3.1">
+<h3><span class="header-section-number">1.3.1</span>
+Leave-One-Environment-Out (LOEO)</h3>
+<p>All observations from one environment are withheld; the model trains
+on the remaining four. This measures <strong>cross-environment
+generalisation</strong>.</p>
+<p>MCG25 is excluded from all analyses (see MCG25 Diagnostic section)
+because its late-season flight (TP12) produces an inverted
+spectral–yield relationship incompatible with the other four
+environments.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Fold</th>
+<th>Training environments</th>
+<th>Validation environment</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>KET21, MCG23, SNY22</td>
+<td>HELF24</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>HELF24, MCG23, SNY22</td>
+<td>KET21</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>HELF24, KET21, SNY22</td>
+<td>MCG23</td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td>HELF24, KET21, MCG23</td>
+<td>SNY22</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="within-environment-5-fold-cv-by-gid" class="section level3"
+number="1.3.2">
+<h3><span class="header-section-number">1.3.2</span> Within-Environment
+5-Fold CV (by GID)</h3>
+<p>Within each environment, GIDs are shuffled and assigned to 5 folds.
+The model trains on 4/5 of GIDs and predicts the remaining 1/5. This
+measures <strong>within-environment predictive ability</strong> for
+unseen genotypes.</p>
+<p>Each scenario is repeated 3 times with different random seeds.
+Performance is Pearson <em>r</em> and RMSE on the back-transformed trait
+scale, benchmarked against linear regression on standard VIs under the
+same schemes.</p>
+<pre class="r"><code># ── Core data wrangling &amp; visualisation ────────────────────────────────────
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+library(corrplot)
+library(knitr)
+library(kableExtra)
+
+# ── Deep learning ──────────────────────────────────────────────────────────
+# torch is the primary backend; neuralnet is a lightweight fallback
+if (!requireNamespace(&quot;torch&quot;, quietly = TRUE)) {
+  stop(&quot;Package &#39;torch&#39; is required. Install with: install.packages(&#39;torch&#39;); torch::install_torch()&quot;)
+}
+library(torch)
+if (!torch::torch_is_installed()) torch::install_torch()
+set.seed(42)
+torch_manual_seed(42)</code></pre>
+</div>
+</div>
+</div>
+<div id="data-loading-and-exploration" class="section level1"
+number="2">
+<h1><span class="header-section-number">2</span> Data Loading and
+Exploration</h1>
+<pre class="r"><code># ── Resolve data path ──────────────────────────────────────────────────────
+pheno_paths &lt;- c(
+  &quot;C:/Users/Siim Sepp/NY_WMBCL/data/WMB_pheno.Rdata&quot;,
+  &quot;~/Documents/GitHub/NY_WMBCL/data/WMB_pheno.Rdata&quot;,
+  &quot;data/WMB_pheno.Rdata&quot;
+)
+pheno_file &lt;- pheno_paths[file.exists(pheno_paths)][1]
+if (is.na(pheno_file)) stop(&quot;WMB_pheno.Rdata not found in any expected location.&quot;)
+message(&quot;Loading: &quot;, pheno_file)
+load(pheno_file)   # loads one or more objects into the environment
+
+# ── Identify the main data frame ───────────────────────────────────────────
+# List objects and find the data frame that is most likely the phenotype table
+loaded_objs &lt;- ls()
+df_candidates &lt;- loaded_objs[sapply(loaded_objs, function(x) is.data.frame(get(x)))]
+message(&quot;Data frames found: &quot;, paste(df_candidates, collapse = &quot;, &quot;))
+
+# Use the largest data frame if multiple exist
+if (length(df_candidates) == 1) {
+  pheno_raw &lt;- get(df_candidates)
+} else {
+  sizes      &lt;- sapply(df_candidates, function(x) nrow(get(x)))
+  pheno_raw  &lt;- get(df_candidates[which.max(sizes)])
+  message(&quot;Using: &quot;, df_candidates[which.max(sizes)])
+}
+
+cat(&quot;Dimensions:&quot;, nrow(pheno_raw), &quot;rows ×&quot;, ncol(pheno_raw), &quot;cols\n&quot;)</code></pre>
+<pre><code>Dimensions: 16008 rows × 48 cols</code></pre>
+<pre class="r"><code>glimpse(pheno_raw)</code></pre>
+<pre><code>Rows: 16,008
+Columns: 48
+$ Env                  &lt;fct&gt; HELF24, HELF24, HELF24, HELF24, HELF24, HELF24, H…
+$ plot_id              &lt;chr&gt; &quot;20246001&quot;, &quot;20246001&quot;, &quot;20246001&quot;, &quot;20246001&quot;, &quot;…
+$ Timepoint            &lt;dbl&gt; 4, 7, 6, 5, 2, 1, 8, 3, 4, 3, 5, 7, 2, 8, 6, 1, 6…
+$ red_edge             &lt;dbl&gt; 0.2169689, 0.1703635, 0.2673531, 0.1576663, 0.210…
+$ green                &lt;dbl&gt; 0.12067748, 0.08381019, 0.12468242, 0.06603633, 0…
+$ blue                 &lt;dbl&gt; 0.12067748, 0.08381019, 0.12468242, 0.06603633, 0…
+$ red                  &lt;dbl&gt; 0.10026337, 0.05735244, 0.05631247, 0.03494691, 0…
+$ nir                  &lt;dbl&gt; 0.3536550, 0.3462386, 0.5741340, 0.3657721, 0.309…
+$ Date                 &lt;date&gt; 2024-05-02, 2024-06-12, 2024-05-29, 2024-05-17, …
+$ DAS                  &lt;dbl&gt; 212, 253, 239, 227, 163, 35, 261, 196, 212, 196, …
+$ GID                  &lt;chr&gt; &quot;BS812-66&quot;, &quot;BS812-66&quot;, &quot;BS812-66&quot;, &quot;BS812-66&quot;, &quot;…
+$ Row                  &lt;fct&gt; 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1…
+$ Column               &lt;fct&gt; 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3…
+$ Block                &lt;lgl&gt; TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, T…
+$ Pedigree             &lt;chr&gt; &quot;SY Tepee x DH130910&quot;, &quot;SY Tepee x DH130910&quot;, &quot;SY…
+$ HD_JD                &lt;dbl&gt; 139, 139, 139, 139, 139, 139, 139, 139, 139, 139,…
+$ Ht                   &lt;dbl&gt; 80, 80, 80, 80, 80, 80, 80, 80, 67, 67, 67, 67, 6…
+$ winter_survival      &lt;dbl&gt; 95, 95, 95, 95, 95, 95, 95, 95, 100, 100, 100, 10…
+$ yield_kgha           &lt;dbl&gt; 4425.102, 4425.102, 4425.102, 4425.102, 4425.102,…
+$ NDVI                 &lt;dbl&gt; 0.5582317, 0.7157894, 0.8213568, 0.8255790, 0.421…
+$ NDRE                 &lt;dbl&gt; 0.2395380, 0.3404460, 0.3645699, 0.3975745, 0.190…
+$ EVI                  &lt;dbl&gt; 0.6032249, 0.6801952, 1.3251777, 0.7656707, 0.449…
+$ GDVI                 &lt;dbl&gt; 0.23297752, 0.26242845, 0.44945154, 0.29973579, 0…
+$ GNDVI                &lt;dbl&gt; 0.4911692, 0.6102294, 0.6431611, 0.6941406, 0.378…
+$ NRI                  &lt;dbl&gt; 0.14944891, 0.09992505, 0.06272277, 0.06258564, 0…
+$ SAVI                 &lt;dbl&gt; 0.3984486, 0.4795635, 0.6871022, 0.5509352, 0.294…
+$ ENDVI                &lt;dbl&gt; 0.3255297, 0.4390864, 0.4740144, 0.5315585, 0.233…
+$ GIPVI                &lt;dbl&gt; 0.7455846, 0.8051147, 0.8215806, 0.8470703, 0.689…
+$ PSRI                 &lt;dbl&gt; -0.09408775, -0.15530178, -0.25572903, -0.1971849…
+$ sowdate              &lt;date&gt; 2023-10-03, 2023-10-03, 2023-10-03, 2023-10-03, …
+$ JD                   &lt;dbl&gt; 212, 253, 239, 227, 163, 35, 261, 196, 212, 196, …
+$ JDf                  &lt;fct&gt; 212, 253, 239, 227, 163, 35, 261, 196, 212, 196, …
+$ KernelWeight.mg.     &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ on6.64....           &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ BarleyColor.Agtron.  &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ MaltExtract...       &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ WortColor            &lt;chr&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ WortClarity          &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ BarleyProtein...     &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ WortProtein...       &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ S.T                  &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ DP..ASBC.            &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ Alpha.amylase.20.DU. &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ Beta.glucan.ppm.     &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ FAN.ppm.             &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ AdjunctQualityScore  &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ All_MaltQualityScore &lt;dbl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
+$ Fam                  &lt;chr&gt; &quot;SY_Tepee × DH130910&quot;, &quot;SY_Tepee × DH130910&quot;, &quot;SY…</code></pre>
+<pre class="r"><code># ── Band columns ───────────────────────────────────────────────────────────
+# Use anchored / precise patterns so that e.g. &quot;red&quot; does NOT match &quot;red_edge&quot;
+BAND_NAMES &lt;- c(&quot;blue&quot;, &quot;green&quot;, &quot;red&quot;, &quot;red_edge&quot;, &quot;nir&quot;)
+band_patterns &lt;- c(
+  blue     = &quot;^blue$&quot;,
+  green    = &quot;^green$&quot;,
+  red      = &quot;^red$&quot;,                          # exact – must NOT match red_edge
+  red_edge = &quot;red[._]?edge|rededge&quot;,
+  nir      = &quot;^nir$&quot;
+)
+band_cols &lt;- sapply(names(band_patterns), function(b) {
+  m &lt;- grep(band_patterns[b], names(pheno_raw), ignore.case = TRUE, value = TRUE)
+  if (length(m) == 0) NA_character_ else m[1]
+}, USE.NAMES = TRUE)
+band_cols &lt;- band_cols[!is.na(band_cols)]
+# band_cols: names = canonical BAND_NAMES, values = actual column names in pheno_raw
+cat(&quot;Band columns found:\n&quot;); print(band_cols)</code></pre>
+<pre><code>Band columns found:</code></pre>
+<pre><code>      blue      green        red   red_edge        nir 
+    &quot;blue&quot;    &quot;green&quot;      &quot;red&quot; &quot;red_edge&quot;      &quot;nir&quot; </code></pre>
+<pre class="r"><code>if (length(band_cols) &lt; 5)
+  warning(&quot;Only &quot;, length(band_cols), &quot; of 5 expected bands found: &quot;,
+          paste(setdiff(BAND_NAMES, names(band_cols)), collapse = &quot;, &quot;), &quot; missing.&quot;)
+
+# ── Standard VI columns ────────────────────────────────────────────────────
+vi_candidates &lt;- c(&quot;NDVI&quot;,&quot;NDRE&quot;,&quot;EVI&quot;,&quot;GNDVI&quot;,&quot;SAVI&quot;,&quot;ENDVI&quot;,&quot;GDVI&quot;,&quot;NRI&quot;,&quot;GIPVI&quot;,&quot;PSRI&quot;)
+vi_cols &lt;- intersect(vi_candidates, names(pheno_raw))
+cat(&quot;Standard VI columns found:&quot;, paste(vi_cols, collapse = &quot;, &quot;), &quot;\n&quot;)</code></pre>
+<pre><code>Standard VI columns found: NDVI, NDRE, EVI, GNDVI, SAVI, ENDVI, GDVI, NRI, GIPVI, PSRI </code></pre>
+<pre class="r"><code># ── Timepoint column ───────────────────────────────────────────────────────
+tp_col &lt;- intersect(c(&quot;Timepoint&quot;,&quot;timepoint&quot;,&quot;TP&quot;,&quot;tp&quot;,&quot;time_point&quot;),
+                    names(pheno_raw))[1]
+cat(&quot;Timepoint column:&quot;, tp_col, &quot;\n&quot;)</code></pre>
+<pre><code>Timepoint column: Timepoint </code></pre>
+<pre class="r"><code># ── Candidate trait columns ────────────────────────────────────────────────
+# Exclude IDs, bands, VIs and spatial variables
+exclude_pat &lt;- paste(c(&quot;GID&quot;,&quot;plot_id&quot;,&quot;Env&quot;,&quot;Row&quot;,&quot;Col&quot;,&quot;Timepoint&quot;,&quot;Fam&quot;,
+                       &quot;JD&quot;,&quot;DAS&quot;,&quot;GDD&quot;, BAND_NAMES, vi_candidates),
+                     collapse=&quot;|&quot;)
+#trait_cols &lt;- names(pheno_raw)[
+#  !grepl(exclude_pat, names(pheno_raw), ignore.case = TRUE) &amp;
+#  sapply(pheno_raw, is.numeric)
+#]
+
+trait_cols&lt;- colnames(pheno_raw)[19]
+cat(&quot;Candidate trait columns:\n&quot;); print(trait_cols)</code></pre>
+<pre><code>Candidate trait columns:</code></pre>
+<pre><code>[1] &quot;yield_kgha&quot;</code></pre>
+<pre class="r"><code># ── Environment column ─────────────────────────────────────────────────────
+env_col &lt;- intersect(c(&quot;Env&quot;,&quot;env&quot;,&quot;environment&quot;,&quot;trial&quot;), names(pheno_raw))[1]
+cat(&quot;Environment column:&quot;, env_col, &quot;\n&quot;)</code></pre>
+<pre><code>Environment column: Env </code></pre>
+<pre class="r"><code># ── GID column ─────────────────────────────────────────────────────────────
+gid_col &lt;- intersect(c(&quot;GID&quot;,&quot;gid&quot;,&quot;Genotype&quot;,&quot;genotype&quot;,&quot;EntryName&quot;,&quot;entry_name&quot;,
+                       &quot;Line&quot;,&quot;line&quot;,&quot;Name&quot;,&quot;name&quot;),
+                     names(pheno_raw))[1]
+cat(&quot;GID column:&quot;, gid_col, &quot;\n&quot;)</code></pre>
+<pre><code>GID column: GID </code></pre>
+<pre class="r"><code># ── Descriptive summary ────────────────────────────────────────────────────
+cat(&quot;\nEnvironments present:\n&quot;)</code></pre>
+<pre><code>
+Environments present:</code></pre>
+<pre class="r"><code>print(table(pheno_raw[[env_col]]))</code></pre>
+<pre><code>
+HELF24  KET21  MCG23  MCG25  SNY22 
+  2496   2880   3024   4640   2968 </code></pre>
+<pre class="r"><code>cat(&quot;\nBand value ranges:\n&quot;)</code></pre>
+<pre><code>
+Band value ranges:</code></pre>
+<pre class="r"><code>pheno_raw %&gt;%
+  select(all_of(unname(band_cols))) %&gt;%
+  summarise(across(everything(), list(
+    min  = ~min(., na.rm = TRUE),
+    mean = ~mean(., na.rm = TRUE),
+    max  = ~max(., na.rm = TRUE),
+    pct_na = ~mean(is.na(.)) * 100
+  ))) %&gt;%
+  pivot_longer(everything(), names_to = c(&quot;band&quot;,&quot;stat&quot;), names_sep = &quot;_(?=[^_]+$)&quot;) %&gt;%
+  pivot_wider(names_from = stat, values_from = value) %&gt;%
+  kable(digits = 3, caption = &quot;Band summary statistics&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;), full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Band summary statistics
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+band
+</th>
+<th style="text-align:right;">
+min
+</th>
+<th style="text-align:right;">
+mean
+</th>
+<th style="text-align:right;">
+max
+</th>
+<th style="text-align:right;">
+na
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+blue
+</td>
+<td style="text-align:right;">
+0.031
+</td>
+<td style="text-align:right;">
+0.099
+</td>
+<td style="text-align:right;">
+0.310
+</td>
+<td style="text-align:right;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+blue_pct
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+0.350
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+green
+</td>
+<td style="text-align:right;">
+0.031
+</td>
+<td style="text-align:right;">
+0.099
+</td>
+<td style="text-align:right;">
+0.310
+</td>
+<td style="text-align:right;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+green_pct
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+0.350
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+red
+</td>
+<td style="text-align:right;">
+0.015
+</td>
+<td style="text-align:right;">
+0.093
+</td>
+<td style="text-align:right;">
+0.369
+</td>
+<td style="text-align:right;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+red_pct
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+0.256
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+red_edge
+</td>
+<td style="text-align:right;">
+0.064
+</td>
+<td style="text-align:right;">
+0.198
+</td>
+<td style="text-align:right;">
+0.422
+</td>
+<td style="text-align:right;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+red_edge_pct
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+0.269
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+nir
+</td>
+<td style="text-align:right;">
+0.117
+</td>
+<td style="text-align:right;">
+551.184
+</td>
+<td style="text-align:right;">
+43806.011
+</td>
+<td style="text-align:right;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+nir_pct
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+NA
+</td>
+<td style="text-align:right;">
+0.256
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="data-preparation" class="section level1" number="3">
+<h1><span class="header-section-number">3</span> Data Preparation</h1>
+<pre class="r"><code># ── Build modelling dataset ────────────────────────────────────────────────
+found_band_names &lt;- names(band_cols)
+
+tp_cols_select  &lt;- if (!is.na(tp_col))  tp_col  else character(0)
+gid_cols_select &lt;- if (!is.na(gid_col)) gid_col else character(0)
+
+model_data &lt;- pheno_raw %&gt;%
+  select(all_of(c(gid_cols_select, env_col, tp_cols_select,
+                  unname(band_cols), vi_cols, trait_cols))) %&gt;%
+  rename(Env = all_of(env_col)) %&gt;%
+  rename(all_of(band_cols)) %&gt;%
+  filter(if_all(all_of(found_band_names), ~ !is.na(.))) %&gt;%
+  mutate(Env = as.factor(Env))
+
+# ── Standardise GID column name ────────────────────────────────────────────
+if (!is.na(gid_col) &amp;&amp; gid_col %in% names(model_data) &amp;&amp; gid_col != &quot;GID&quot;) {
+  model_data &lt;- model_data %&gt;% rename(GID = all_of(gid_col))
+} else if (!&quot;GID&quot; %in% names(model_data)) {
+  model_data$GID &lt;- as.character(seq_len(nrow(model_data)))
+  warning(&quot;No GID column found; using row index as GID.&quot;)
+}
+
+# ── Standardise Timepoint column name ─────────────────────────────────────
+if (!is.na(tp_col) &amp;&amp; tp_col != &quot;Timepoint&quot;) {
+  model_data &lt;- model_data %&gt;% rename(Timepoint = all_of(tp_col))
+}
+if (!&quot;Timepoint&quot; %in% names(model_data)) {
+  model_data$Timepoint &lt;- 1L
+  warning(&quot;No Timepoint column found; treating all rows as a single timepoint.&quot;)
+}
+
+# ── Group variable: Env × Timepoint ───────────────────────────────────────
+model_data &lt;- model_data %&gt;%
+  mutate(Timepoint = as.integer(Timepoint),
+         group     = paste(Env, Timepoint, sep = &quot;_TP&quot;))
+
+model_data &lt;- model_data %&gt;%
+  filter(group %in% c(&quot;HELF24_TP7&quot;,&quot;KET21_TP4&quot;,&quot;MCG23_TP5&quot;,&quot;MCG25_TP12&quot;,&quot;SNY22_TP6&quot;))
+
+BAND_NAMES &lt;- found_band_names
+cat(&quot;\nRows with complete band data (all 5 environments):&quot;, nrow(model_data), &quot;\n&quot;)</code></pre>
+<pre><code>
+Rows with complete band data (all 5 environments): 1939 </code></pre>
+<pre class="r"><code># ── Compute NDVI from raw band values (before any standardisation) ────────
+if (all(c(&quot;red&quot;, &quot;nir&quot;) %in% names(model_data))) {
+  model_data &lt;- model_data %&gt;%
+    mutate(NDVI_raw = (nir - red) / (nir + red + 1e-8))
+  cat(&quot;NDVI_raw computed: min =&quot;, round(min(model_data$NDVI_raw, na.rm=TRUE), 3),
+      &quot; mean =&quot;, round(mean(model_data$NDVI_raw, na.rm=TRUE), 3),
+      &quot; max =&quot;, round(max(model_data$NDVI_raw, na.rm=TRUE), 3), &quot;\n&quot;)
+} else {
+  warning(&quot;Cannot compute NDVI_raw: &#39;red&#39; or &#39;nir&#39; not found in band columns.&quot;)
+}</code></pre>
+<pre><code>NDVI_raw computed: min = 0.314  mean = 0.619  max = 0.923 </code></pre>
+<pre class="r"><code># ── Save truly raw copy with all 5 environments (used in MCG25 diagnostic) ─
+model_data_raw_orig &lt;- model_data
+
+# ── Exclude MCG25: TP12 is a late-season flight with inverted spectral-yield
+#    relationship (see MCG25 Diagnostic section). All model training uses
+#    the remaining 4 environments only.
+model_data &lt;- model_data %&gt;% filter(Env != &quot;MCG25&quot;)
+cat(&quot;MCG25 excluded. Remaining environments:&quot;,
+    paste(sort(unique(as.character(model_data$Env))), collapse = &quot;, &quot;), &quot;\n&quot;)</code></pre>
+<pre><code>MCG25 excluded. Remaining environments: HELF24, KET21, MCG23, SNY22 </code></pre>
+<pre class="r"><code>cat(&quot;Remaining rows:&quot;, nrow(model_data), &quot;\n&quot;)</code></pre>
+<pre><code>Remaining rows: 1707 </code></pre>
+<pre class="r"><code>group_levels_all &lt;- sort(unique(model_data$group))
+cat(&quot;Timepoint × Environment groups:&quot;, length(group_levels_all), &quot;\n&quot;)</code></pre>
+<pre><code>Timepoint × Environment groups: 4 </code></pre>
+<pre class="r"><code>print(group_levels_all)</code></pre>
+<pre><code>[1] &quot;HELF24_TP7&quot; &quot;KET21_TP4&quot;  &quot;MCG23_TP5&quot;  &quot;SNY22_TP6&quot; </code></pre>
+<pre class="r"><code># ── Per-environment spectral standardisation ──────────────────────────────
+# Each band is z-scored within its environment, removing environment-specific
+# spectral baseline offsets (sensor calibration, soil background, canopy
+# structure differences between trials). Applied after NDVI_raw so NDVI
+# uses original reflectances. Both model_data_raw (CV) and model_data
+# (full-data models) receive these standardised bands.
+model_data &lt;- model_data %&gt;%
+  group_by(Env) %&gt;%
+  mutate(across(all_of(BAND_NAMES),
+                ~ (. - mean(., na.rm = TRUE)) / (sd(., na.rm = TRUE) + 1e-8))) %&gt;%
+  ungroup()
+
+cat(&quot;\nPer-environment band standardisation applied.\n&quot;)</code></pre>
+<pre><code>
+Per-environment band standardisation applied.</code></pre>
+<pre class="r"><code>cat(&quot;Post-standardisation band means per environment (should be ~0):\n&quot;)</code></pre>
+<pre><code>Post-standardisation band means per environment (should be ~0):</code></pre>
+<pre class="r"><code>model_data %&gt;%
+  group_by(Env) %&gt;%
+  summarise(across(all_of(BAND_NAMES), ~ round(mean(., na.rm = TRUE), 3)),
+            .groups = &quot;drop&quot;) %&gt;%
+  print()</code></pre>
+<pre><code># A tibble: 4 × 6
+  Env     blue green   red red_edge   nir
+  &lt;fct&gt;  &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt;
+1 HELF24     0     0     0        0     0
+2 KET21      0     0     0        0     0
+3 MCG23      0     0     0        0     0
+4 SNY22      0     0     0        0     0</code></pre>
+<pre class="r"><code># ── Save env-standardised, unscaled copy for per-fold scaling in CV ────────
+model_data_raw &lt;- model_data
+
+# ── Global scaling of model_data (used for full-data models &amp; plots) ───────
+band_scale &lt;- map(BAND_NAMES, function(b) {
+  list(min = min(model_data[[b]], na.rm = TRUE),
+       max = max(model_data[[b]], na.rm = TRUE))
+}) %&gt;% set_names(BAND_NAMES)
+
+for (b in BAND_NAMES) {
+  rng &lt;- band_scale[[b]]
+  model_data[[b]] &lt;- (model_data[[b]] - rng$min) / (rng$max - rng$min + 1e-8)
+}
+
+trait_scale &lt;- map(trait_cols, function(t) {
+  vals &lt;- model_data[[t]]
+  list(mean = mean(vals, na.rm = TRUE), sd = sd(vals, na.rm = TRUE))
+}) %&gt;% set_names(trait_cols)
+
+for (t in trait_cols) {
+  sc &lt;- trait_scale[[t]]
+  model_data[[t]] &lt;- (model_data[[t]] - sc$mean) / (sc$sd + 1e-8)
+}
+
+cat(&quot;Traits to model:&quot;, length(trait_cols), &quot;\n&quot;)</code></pre>
+<pre><code>Traits to model: 1 </code></pre>
+<pre class="r"><code># ── Visual EDA: band-band and band-VI correlations ─────────────────────────
+cor_bands &lt;- cor(model_data[, BAND_NAMES], use = &quot;pairwise.complete.obs&quot;)
+corrplot(cor_bands, method = &quot;color&quot;, type = &quot;upper&quot;,
+         addCoef.col = &quot;black&quot;, number.cex = 0.8,
+         title = &quot;Band–Band Correlations&quot;, mar = c(0,0,2,0))</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/band-correlations-1.png" alt="Correlations among raw spectral bands" width="960" />
+<p class="caption">
+Correlations among raw spectral bands
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-band-correlations-1">
+Past versions of band-correlations-1.png
+</button>
+</p>
+<div id="fig-band-correlations-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/band-correlations-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/band-correlations-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="mcg25-diagnostic-analysis" class="section level1" number="4">
+<h1><span class="header-section-number">4</span> MCG25 Diagnostic
+Analysis</h1>
+<p>MCG25 (timepoint 12) is the single environment that consistently
+fails in LOEO cross-validation. This section investigates whether the
+failure is driven by spectral range differences, a different yield–NDVI
+relationship within the environment, or the unusually late flight timing
+relative to the other four trials.</p>
+<pre class="r"><code># ── Timepoint context: how late is MCG25_TP12 relative to the other groups? ─
+tp_context &lt;- model_data_raw_orig %&gt;%
+  distinct(Env, Timepoint, group) %&gt;%
+  arrange(Timepoint)
+
+tp_context %&gt;%
+  kable(col.names = c(&quot;Environment&quot;, &quot;Timepoint&quot;, &quot;Group&quot;),
+        caption = &quot;Selected Timepoint × Environment groups — MCG25 uses a much later flight&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;), full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Selected Timepoint × Environment groups — MCG25 uses a much later flight
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Environment
+</th>
+<th style="text-align:right;">
+Timepoint
+</th>
+<th style="text-align:left;">
+Group
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+KET21
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:left;">
+KET21_TP4
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MCG23
+</td>
+<td style="text-align:right;">
+5
+</td>
+<td style="text-align:left;">
+MCG23_TP5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SNY22
+</td>
+<td style="text-align:right;">
+6
+</td>
+<td style="text-align:left;">
+SNY22_TP6
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+HELF24
+</td>
+<td style="text-align:right;">
+7
+</td>
+<td style="text-align:left;">
+HELF24_TP7
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MCG25
+</td>
+<td style="text-align:right;">
+12
+</td>
+<td style="text-align:left;">
+MCG25_TP12
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>p_yield &lt;- model_data_raw_orig %&gt;%
+  filter(!is.na(.data[[trait_cols[1]]])) %&gt;%
+  ggplot(aes(x = .data[[trait_cols[1]]], fill = Env)) +
+  geom_density(alpha = 0.65) +
+  facet_wrap(~Env, ncol = 5, scales = &quot;free_y&quot;) +
+  scale_fill_brewer(palette = &quot;Set2&quot;) +
+  labs(x = trait_cols[1], y = &quot;Density&quot;, title = &quot;Yield distribution&quot;) +
+  theme_bw(base_size = 10) + theme(legend.position = &quot;none&quot;)
+
+p_ndvi &lt;- model_data_raw_orig %&gt;%
+  ggplot(aes(x = NDVI_raw, fill = Env)) +
+  geom_density(alpha = 0.65) +
+  facet_wrap(~Env, ncol = 5, scales = &quot;free_y&quot;) +
+  scale_fill_brewer(palette = &quot;Set2&quot;) +
+  labs(x = &quot;NDVI (raw)&quot;, y = &quot;Density&quot;, title = &quot;NDVI distribution&quot;) +
+  theme_bw(base_size = 10) + theme(legend.position = &quot;none&quot;)
+
+p_yield / p_ndvi</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/mcg25-yield-ndvi-dist-1.png" alt="Yield and NDVI distributions per environment" width="960" />
+<p class="caption">
+Yield and NDVI distributions per environment
+</p>
+</div>
+<pre class="r"><code>model_data_raw_orig %&gt;%
+  select(Env, all_of(BAND_NAMES)) %&gt;%
+  pivot_longer(all_of(BAND_NAMES), names_to = &quot;band&quot;, values_to = &quot;value&quot;) %&gt;%
+  mutate(band = factor(band, levels = BAND_NAMES)) %&gt;%
+  ggplot(aes(x = Env, y = value, fill = Env)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  facet_wrap(~band, scales = &quot;free_y&quot;, nrow = 1) +
+  scale_fill_brewer(palette = &quot;Set2&quot;) +
+  labs(x = NULL, y = &quot;Reflectance&quot;, title = &quot;Band reflectance by environment&quot;) +
+  theme_bw(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        legend.position = &quot;none&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/mcg25-band-distributions-1.png" alt="Raw band reflectance distributions by environment — MCG25 at TP12 may occupy a different spectral range" width="960" />
+<p class="caption">
+Raw band reflectance distributions by environment — MCG25 at TP12 may
+occupy a different spectral range
+</p>
+</div>
+<pre class="r"><code>trait_diag &lt;- trait_cols[1]
+
+cors_ndvi &lt;- model_data_raw_orig %&gt;%
+  filter(!is.na(.data[[trait_diag]]), !is.na(NDVI_raw)) %&gt;%
+  group_by(Env) %&gt;%
+  summarise(r     = cor(NDVI_raw, .data[[trait_diag]], use = &quot;complete.obs&quot;),
+            label = paste0(&quot;r = &quot;, round(r, 3)),
+            .groups = &quot;drop&quot;)
+
+model_data_raw_orig %&gt;%
+  filter(!is.na(.data[[trait_diag]]), !is.na(NDVI_raw)) %&gt;%
+  ggplot(aes(x = NDVI_raw, y = .data[[trait_diag]], colour = Env)) +
+  geom_point(alpha = 0.35, size = 1.2) +
+  geom_smooth(method = &quot;lm&quot;, se = TRUE, colour = &quot;black&quot;, linewidth = 0.8) +
+  geom_label(data = cors_ndvi,
+             aes(x = -Inf, y = Inf, label = label),
+             hjust = -0.05, vjust = 1.4,
+             inherit.aes = FALSE, size = 3.5, fontface = &quot;bold&quot;,
+             fill = &quot;white&quot;, label.size = 0.2) +
+  facet_wrap(~Env, ncol = 3, scales = &quot;free&quot;) +
+  scale_colour_brewer(palette = &quot;Set2&quot;) +
+  labs(x = &quot;NDVI (raw)&quot;, y = trait_diag,
+       title = &quot;NDVI vs yield: within-environment scatter&quot;) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = &quot;none&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/mcg25-ndvi-yield-scatter-1.png" alt="NDVI vs yield within each environment — correlation and regression line" width="960" />
+<p class="caption">
+NDVI vs yield within each environment — correlation and regression line
+</p>
+</div>
+<pre class="r"><code># ── Within-environment Pearson r for every band and NDVI vs trait ──────────
+trait_diag &lt;- trait_cols[1]
+
+band_yield_cors &lt;- model_data_raw_orig %&gt;%
+  filter(!is.na(.data[[trait_diag]])) %&gt;%
+  group_by(Env) %&gt;%
+  summarise(
+    across(all_of(c(BAND_NAMES, &quot;NDVI_raw&quot;)),
+           ~ round(cor(., .data[[trait_diag]], use = &quot;complete.obs&quot;), 3)),
+    n_obs = sum(!is.na(.data[[trait_diag]])),
+    .groups = &quot;drop&quot;
+  )
+
+band_yield_cors %&gt;%
+  kable(caption = paste(&quot;Within-environment Pearson r: each band and NDVI vs&quot;, trait_diag)) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;), full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Within-environment Pearson r: each band and NDVI vs yield_kgha
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Env
+</th>
+<th style="text-align:right;">
+blue
+</th>
+<th style="text-align:right;">
+green
+</th>
+<th style="text-align:right;">
+red
+</th>
+<th style="text-align:right;">
+red_edge
+</th>
+<th style="text-align:right;">
+nir
+</th>
+<th style="text-align:right;">
+NDVI_raw
+</th>
+<th style="text-align:right;">
+n_obs
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+HELF24
+</td>
+<td style="text-align:right;">
+0.114
+</td>
+<td style="text-align:right;">
+0.114
+</td>
+<td style="text-align:right;">
+-0.259
+</td>
+<td style="text-align:right;">
+0.168
+</td>
+<td style="text-align:right;">
+0.514
+</td>
+<td style="text-align:right;">
+0.413
+</td>
+<td style="text-align:right;">
+312
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+KET21
+</td>
+<td style="text-align:right;">
+0.184
+</td>
+<td style="text-align:right;">
+0.184
+</td>
+<td style="text-align:right;">
+-0.416
+</td>
+<td style="text-align:right;">
+0.325
+</td>
+<td style="text-align:right;">
+0.552
+</td>
+<td style="text-align:right;">
+0.566
+</td>
+<td style="text-align:right;">
+466
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MCG23
+</td>
+<td style="text-align:right;">
+0.030
+</td>
+<td style="text-align:right;">
+0.030
+</td>
+<td style="text-align:right;">
+-0.779
+</td>
+<td style="text-align:right;">
+0.530
+</td>
+<td style="text-align:right;">
+0.890
+</td>
+<td style="text-align:right;">
+0.871
+</td>
+<td style="text-align:right;">
+504
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MCG25
+</td>
+<td style="text-align:right;">
+-0.757
+</td>
+<td style="text-align:right;">
+-0.757
+</td>
+<td style="text-align:right;">
+-0.756
+</td>
+<td style="text-align:right;">
+-0.600
+</td>
+<td style="text-align:right;">
+0.777
+</td>
+<td style="text-align:right;">
+0.762
+</td>
+<td style="text-align:right;">
+232
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SNY22
+</td>
+<td style="text-align:right;">
+-0.213
+</td>
+<td style="text-align:right;">
+-0.213
+</td>
+<td style="text-align:right;">
+-0.380
+</td>
+<td style="text-align:right;">
+0.000
+</td>
+<td style="text-align:right;">
+0.008
+</td>
+<td style="text-align:right;">
+0.341
+</td>
+<td style="text-align:right;">
+424
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>band_yield_cors %&gt;%
+  select(Env, all_of(BAND_NAMES), NDVI_raw) %&gt;%
+  pivot_longer(-Env, names_to = &quot;band&quot;, values_to = &quot;r&quot;) %&gt;%
+  mutate(band = factor(band, levels = c(BAND_NAMES, &quot;NDVI_raw&quot;))) %&gt;%
+  ggplot(aes(x = band, y = Env, fill = r)) +
+  geom_tile(colour = &quot;white&quot;, linewidth = 0.5) +
+  geom_text(aes(label = round(r, 2)), size = 3.5, fontface = &quot;bold&quot;) +
+  scale_fill_gradient2(low = &quot;#2166ac&quot;, mid = &quot;white&quot;, high = &quot;#b2182b&quot;,
+                       midpoint = 0, limits = c(-1, 1)) +
+  labs(x = &quot;Spectral predictor&quot;, y = NULL,
+       title = paste(&quot;Within-environment Pearson r — band/NDVI vs&quot;, trait_diag),
+       fill = &quot;r&quot;) +
+  theme_bw(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/mcg25-band-yield-heatmap-1.png" alt="Heatmap of within-environment band–yield correlations" width="960" />
+<p class="caption">
+Heatmap of within-environment band–yield correlations
+</p>
+</div>
+<pre class="r"><code># ── Variance partitioning: η² (between-env SS / total SS) per band ────────
+# High η² means most spectral variance is between environments (not genotypes).
+# If MCG25 is spectrally extreme, it will dominate the between-env component.
+vp &lt;- model_data_raw_orig %&gt;%
+  select(Env, all_of(BAND_NAMES), NDVI_raw, all_of(trait_cols[1])) %&gt;%
+  pivot_longer(-Env, names_to = &quot;variable&quot;, values_to = &quot;value&quot;) %&gt;%
+  filter(!is.na(value)) %&gt;%
+  group_by(variable) %&gt;%
+  mutate(grand_mean = mean(value)) %&gt;%
+  group_by(variable, Env) %&gt;%
+  mutate(env_mean = mean(value)) %&gt;%
+  ungroup() %&gt;%
+  group_by(variable) %&gt;%
+  summarise(
+    SS_total   = sum((value - grand_mean)^2),
+    SS_between = sum((env_mean - grand_mean)^2),
+    eta2       = round(SS_between / SS_total, 3),
+    .groups = &quot;drop&quot;
+  ) %&gt;%
+  arrange(desc(eta2))
+
+vp %&gt;%
+  kable(col.names = c(&quot;Variable&quot;, &quot;SS total&quot;, &quot;SS between-env&quot;, &quot;η² (between-env)&quot;),
+        digits = c(0, 0, 0, 3),
+        caption = &quot;Variance partitioning: proportion of total variance attributable to environment&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;), full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Variance partitioning: proportion of total variance attributable to
+environment
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Variable
+</th>
+<th style="text-align:right;">
+SS total
+</th>
+<th style="text-align:right;">
+SS between-env
+</th>
+<th style="text-align:right;">
+η² (between-env)
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+red
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+0.602
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+red_edge
+</td>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+0.586
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+nir
+</td>
+<td style="text-align:right;">
+6
+</td>
+<td style="text-align:right;">
+3
+</td>
+<td style="text-align:right;">
+0.555
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NDVI_raw
+</td>
+<td style="text-align:right;">
+31
+</td>
+<td style="text-align:right;">
+17
+</td>
+<td style="text-align:right;">
+0.534
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+blue
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.531
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+green
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.531
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+2491057787
+</td>
+<td style="text-align:right;">
+299467714
+</td>
+<td style="text-align:right;">
+0.120
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="dnn-architecture" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> DNN Architecture</h1>
+<p>The network has two components trained <strong>within each Timepoint
+× Environment group</strong>:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Band Encoder</strong> — three fully-connected layers
+(n_bands → 16 → 8 → 1). The single output neuron is the <em>Synthetic
+VI</em> — no activation, so it spans the full real line.</p></li>
+<li><p><strong>Prediction Head</strong> — maps the scalar Synthetic VI
+through one hidden layer to the trait prediction.</p></li>
+</ol>
+<p>The prediction head receives the Synthetic VI concatenated with a
+learned <strong>environment embedding</strong> so that the VI→trait
+mapping can shift per trial, while the encoder (VI formula) remains
+shared across environments. For unseen environments in LOEO, the mean
+embedding of the training environments is used as a proxy.</p>
+<pre class="r"><code># ══════════════════════════════════════════════════════════════════════════
+# Band Encoder: n_bands → 16 → 8 → 1 (Synthetic VI bottleneck)
+# ══════════════════════════════════════════════════════════════════════════
+BandEncoder &lt;- nn_module(
+  classname = &quot;BandEncoder&quot;,
+  initialize = function(n_bands = 5, h1 = 16, h2 = 8) {
+    self$fc1  &lt;- nn_linear(n_bands, h1)
+    self$fc2  &lt;- nn_linear(h1, h2)
+    self$fc3  &lt;- nn_linear(h2, 1)      # bottleneck = Synthetic VI (linear out)
+    self$drop &lt;- nn_dropout(0.1)
+  },
+  forward = function(x) {
+    x &lt;- x %&gt;% self$fc1() %&gt;% nnf_relu() %&gt;% self$drop()
+    x &lt;- x %&gt;% self$fc2() %&gt;% nnf_relu() %&gt;% self$drop()
+    self$fc3(x)
+  }
+)
+
+# ══════════════════════════════════════════════════════════════════════════
+# Full predictor: encoder → Synthetic VI → prediction head → trait
+# ══════════════════════════════════════════════════════════════════════════
+SyntheticVIModel &lt;- nn_module(
+  classname = &quot;SyntheticVIModel&quot;,
+  initialize = function(n_bands = 5, n_envs = 5, d_embed = 4L, pred_h = 8L) {
+    self$encoder  &lt;- BandEncoder(n_bands)
+    self$env_emb  &lt;- nn_embedding(n_envs, d_embed)     # one vector per environment
+    self$pred_fc1 &lt;- nn_linear(1L + d_embed, pred_h)   # [SynVI | env_embed] → hidden
+    self$pred_fc2 &lt;- nn_linear(pred_h, 1L)
+    self$drop     &lt;- nn_dropout(0.1)
+  },
+  forward = function(bands, env_idx = NULL, env_vec = NULL) {
+    vi &lt;- self$encoder(bands)                           # (N, 1)
+    ev &lt;- if (!is.null(env_idx)) {
+      self$env_emb(env_idx)                             # (N, d_embed) — known env
+    } else {
+      env_vec$expand(c(vi$size(1), -1L))                # broadcast mean embed for unseen env
+    }
+    torch_cat(list(vi, ev), dim = 2) %&gt;%
+      self$pred_fc1() %&gt;% nnf_relu() %&gt;% self$drop() %&gt;%
+      self$pred_fc2()
+  },
+  get_synthetic_vi = function(bands) {
+    self$encoder(bands)
+  }
+)
+
+cat(&quot;Model architecture defined.\n&quot;)</code></pre>
+<pre><code>Model architecture defined.</code></pre>
+<pre class="r"><code>cat(&quot;  Encoder:       n_bands → 16 → 8 → 1 (Synthetic VI)\n&quot;)</code></pre>
+<pre><code>  Encoder:       n_bands → 16 → 8 → 1 (Synthetic VI)</code></pre>
+<pre class="r"><code>cat(&quot;  Env embedding: n_envs × d_embed = 4\n&quot;)</code></pre>
+<pre><code>  Env embedding: n_envs × d_embed = 4</code></pre>
+<pre class="r"><code>cat(&quot;  Predictor:     (1 + 4) → 8 → 1 (trait)\n&quot;)</code></pre>
+<pre><code>  Predictor:     (1 + 4) → 8 → 1 (trait)</code></pre>
+</div>
+<div id="training" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> Training</h1>
+<p>Two CV scenarios are run in parallel:</p>
+<ul>
+<li><strong>LOEO</strong>: holds out one environment at a time, trains
+on the other four.</li>
+<li><strong>Within-env 5-fold CV</strong>: within each environment, GIDs
+are assigned to 5 folds; the model trains on 4 folds and predicts the
+5th.</li>
+</ul>
+<p>In both, the band scaler (0–1 min–max) and trait scaler (z-score) are
+fit on training data only and applied to the test fold —
+<code>model_data_raw</code> (unscaled) is passed to the CV functions so
+scaling is done internally.</p>
+<p>After CV, a final model trained on all data is used to extract the
+<strong>Synthetic VI formula</strong>.</p>
+<pre class="r"><code># ── Helper: build band + label tensors from a pre-scaled data frame ────────
+make_tensors &lt;- function(df, trait) {
+  df_sub &lt;- df[!is.na(df[[trait]]), ]
+  list(
+    bands = torch_tensor(as.matrix(df_sub[, BAND_NAMES, drop = FALSE]),
+                         dtype = torch_float()),
+    y     = torch_tensor(df_sub[[trait]], dtype = torch_float())$unsqueeze(2)
+  )
+}
+
+# ── Scale df using stats from train_df; return scaled df + back-transform params
+scale_from_train &lt;- function(df, train_df, trait) {
+  band_sc  &lt;- map(BAND_NAMES, function(b)
+    list(mn = min(train_df[[b]], na.rm = TRUE),
+         mx = max(train_df[[b]], na.rm = TRUE))) %&gt;% set_names(BAND_NAMES)
+  trait_mn &lt;- mean(train_df[[trait]], na.rm = TRUE)
+  trait_sd &lt;- sd(train_df[[trait]],   na.rm = TRUE)
+  for (b in BAND_NAMES) {
+    sc &lt;- band_sc[[b]]
+    df[[b]] &lt;- (df[[b]] - sc$mn) / (sc$mx - sc$mn + 1e-8)
+  }
+  df[[trait]] &lt;- (df[[trait]] - trait_mn) / (trait_sd + 1e-8)
+  list(df = df, trait_mn = trait_mn, trait_sd = trait_sd)
+}
+
+# ── Core training loop ─────────────────────────────────────────────────────
+train_model &lt;- function(train_df, trait, env_levels,
+                        epochs = 300, lr = 3e-3, batch_size = 64,
+                        seed = NULL, verbose = FALSE) {
+  if (!is.null(seed)) torch_manual_seed(seed)
+  df_sub  &lt;- train_df[!is.na(train_df[[trait]]), ]
+  tensors &lt;- make_tensors(train_df, trait)
+  n       &lt;- tensors$bands$size(1)
+  if (n &lt; 10) return(NULL)
+
+  # Environment indices (1-based, as required by torch nn_embedding in R)
+  env_idx &lt;- torch_tensor(
+    match(as.character(df_sub$Env), env_levels),
+    dtype = torch_long()
+  )
+
+  n_envs &lt;- length(env_levels)
+  model  &lt;- SyntheticVIModel(n_bands = length(BAND_NAMES),
+                              n_envs = n_envs, d_embed = 4L, pred_h = 8L)
+  opt    &lt;- optim_adam(model$parameters, lr = lr, weight_decay = 1e-4)
+  sched  &lt;- lr_step(opt, step_size = 100, gamma = 0.5)
+
+  model$train()
+  for (ep in seq_len(epochs)) {
+    idx &lt;- sample(n)
+    for (i in seq(1, n, by = batch_size)) {
+      bi &lt;- idx[i:min(i + batch_size - 1, n)]
+      opt$zero_grad()
+      pred &lt;- model(tensors$bands[bi, , drop = FALSE],
+                    env_idx = env_idx[bi])
+      loss &lt;- nnf_mse_loss(pred, tensors$y[bi, , drop = FALSE])
+      loss$backward()
+      nn_utils_clip_grad_norm_(model$parameters, 1.0)
+      opt$step()
+    }
+    sched$step()
+    if (verbose &amp;&amp; ep %% 100 == 0)
+      cat(sprintf(&quot;  ep %d | loss %.4f\n&quot;, ep, loss$item()))
+  }
+  model$eval()
+  model
+}
+
+# ── LOEO: Leave-One-Environment-Out CV ────────────────────────────────────
+# Takes raw (unscaled) data. Scaler fit on training environments only.
+# For the unseen held-out environment, the mean embedding of the 4 training
+# environments is used as a proxy in the prediction head.
+loeo_cv &lt;- function(data_raw, trait, env_levels, n_reps = 3,
+                    epochs = 300, lr = 3e-3, batch_size = 64) {
+  envs &lt;- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(held_env) {
+    train_raw &lt;- data_raw %&gt;% filter(Env != held_env, !is.na(.data[[trait]]))
+    test_raw  &lt;- data_raw %&gt;% filter(Env == held_env,  !is.na(.data[[trait]]))
+    if (nrow(train_raw) &lt; 10 || nrow(test_raw) &lt; 2) return(NULL)
+
+    sc_out   &lt;- scale_from_train(train_raw, train_raw, trait)
+    train_sc &lt;- sc_out$df
+    trait_mn &lt;- sc_out$trait_mn
+    trait_sd &lt;- sc_out$trait_sd
+    test_sc  &lt;- scale_from_train(test_raw, train_raw, trait)$df
+
+    # Indices (1-based) of the 4 training environments
+    train_env_idx &lt;- torch_tensor(
+      match(sort(unique(as.character(train_raw$Env))), env_levels),
+      dtype = torch_long()
+    )
+
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      model &lt;- tryCatch(
+        train_model(train_sc, trait, env_levels = env_levels,
+                    epochs = epochs, lr = lr,
+                    batch_size = batch_size, seed = rep_i * 100L),
+        error = function(e) { message(held_env, &quot; rep&quot;, rep_i, &quot;: &quot;, e$message); NULL }
+      )
+      if (is.null(model)) return(NULL)
+
+      # Mean embedding of training envs → proxy for unseen held-out environment
+      mean_env_vec &lt;- with_no_grad({
+        model$env_emb(train_env_idx)$mean(dim = 1, keepdim = TRUE)
+      })
+
+      te_ten &lt;- make_tensors(test_sc, trait)
+      with_no_grad({
+        pred_z &lt;- model(te_ten$bands, env_vec = mean_env_vec)$squeeze()$to(device = &quot;cpu&quot;)
+      })
+      pred &lt;- as.numeric(pred_z) * trait_sd + trait_mn
+      obs  &lt;- as.numeric(te_ten$y$squeeze()) * trait_sd + trait_mn
+      tibble(held_env = held_env, rep = rep_i, n_test = length(obs),
+             r    = cor(pred, obs, use = &quot;complete.obs&quot;),
+             rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+    })
+  })
+}
+
+# ── Within-environment 5-fold CV (split by GID) ───────────────────────────
+# Takes raw (unscaled) data. GIDs assigned to folds; scaler fit on train GIDs.
+# The correct environment index is known for both train and test, so the
+# learned embedding is used directly (no mean-proxy needed).
+within_env_cv &lt;- function(data_raw, trait, env_levels, n_folds = 5, n_reps = 3,
+                          epochs = 300, lr = 3e-3, batch_size = 64) {
+  envs &lt;- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(env_i) {
+    env_df    &lt;- data_raw %&gt;% filter(Env == env_i, !is.na(.data[[trait]]))
+    gids      &lt;- unique(env_df$GID)
+    env_i_idx &lt;- match(env_i, env_levels)   # 1-based index for this env (torch R convention)
+    if (length(gids) &lt; n_folds) {
+      message(&quot;Env &quot;, env_i, &quot;: &quot;, length(gids), &quot; GIDs &lt; n_folds — skipping&quot;)
+      return(NULL)
+    }
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled &lt;- sample(gids)
+      fold_id  &lt;- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold &lt;- tibble(GID = shuffled, fold = fold_id)
+
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids   &lt;- gid_fold$GID[gid_fold$fold == f]
+        train_raw_f &lt;- env_df %&gt;% filter(!GID %in% test_gids)
+        test_raw_f  &lt;- env_df %&gt;% filter( GID %in% test_gids)
+        if (nrow(train_raw_f) &lt; 10 || nrow(test_raw_f) &lt; 2) return(NULL)
+
+        sc_out   &lt;- scale_from_train(train_raw_f, train_raw_f, trait)
+        train_sc &lt;- sc_out$df
+        trait_mn &lt;- sc_out$trait_mn
+        trait_sd &lt;- sc_out$trait_sd
+        test_sc  &lt;- scale_from_train(test_raw_f, train_raw_f, trait)$df
+
+        model &lt;- tryCatch(
+          train_model(train_sc, trait, env_levels = env_levels,
+                      epochs = epochs, lr = lr,
+                      batch_size = batch_size, seed = rep_i * 100L + f),
+          error = function(e) NULL
+        )
+        if (is.null(model)) return(NULL)
+        te_ten    &lt;- make_tensors(test_sc, trait)
+        te_env_idx &lt;- torch_tensor(
+          rep(env_i_idx, te_ten$bands$size(1)),
+          dtype = torch_long()
+        )
+        with_no_grad({
+          pred_z &lt;- model(te_ten$bands,
+                          env_idx = te_env_idx)$squeeze()$to(device = &quot;cpu&quot;)
+        })
+        pred &lt;- as.numeric(pred_z) * trait_sd + trait_mn
+        obs  &lt;- as.numeric(te_ten$y$squeeze()) * trait_sd + trait_mn
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = &quot;complete.obs&quot;),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── Linear-model LOEO CV (for NDVI baseline) ─────────────────────────────
+linreg_loeo_cv &lt;- function(data_raw, predictor, trait) {
+  envs &lt;- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(held_env) {
+    tr &lt;- data_raw %&gt;% filter(Env != held_env,
+                              !is.na(.data[[predictor]]), !is.na(.data[[trait]]))
+    te &lt;- data_raw %&gt;% filter(Env == held_env,
+                              !is.na(.data[[predictor]]), !is.na(.data[[trait]]))
+    if (nrow(tr) &lt; 10 || nrow(te) &lt; 2) return(NULL)
+    fit  &lt;- lm(as.formula(paste(trait, &quot;~&quot;, predictor)), data = tr)
+    pred &lt;- predict(fit, newdata = te)
+    obs  &lt;- te[[trait]]
+    tibble(held_env = held_env, n_test = nrow(te),
+           r    = cor(pred, obs, use = &quot;complete.obs&quot;),
+           rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+  })
+}
+
+# ── Linear-model within-env 5-fold CV by GID (for NDVI baseline) ──────────
+linreg_wenv_cv &lt;- function(data_raw, predictor, trait,
+                           n_folds = 5, n_reps = 3) {
+  envs &lt;- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(env_i) {
+    env_df &lt;- data_raw %&gt;% filter(Env == env_i,
+                                  !is.na(.data[[predictor]]), !is.na(.data[[trait]]))
+    gids &lt;- unique(env_df$GID)
+    if (length(gids) &lt; n_folds) return(NULL)
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled &lt;- sample(gids)
+      fold_id  &lt;- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold &lt;- tibble(GID = shuffled, fold = fold_id)
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids &lt;- gid_fold$GID[gid_fold$fold == f]
+        tr &lt;- env_df %&gt;% filter(!GID %in% test_gids)
+        te &lt;- env_df %&gt;% filter( GID %in% test_gids)
+        if (nrow(tr) &lt; 5 || nrow(te) &lt; 2) return(NULL)
+        fit  &lt;- lm(as.formula(paste(trait, &quot;~&quot;, predictor)), data = tr)
+        pred &lt;- predict(fit, newdata = te)
+        obs  &lt;- te[[trait]]
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = nrow(te),
+               r    = cor(pred, obs, use = &quot;complete.obs&quot;),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── Helper: extract Synthetic VI values from a frozen encoder ─────────────
+extract_synvi &lt;- function(model, df) {
+  if (nrow(df) == 0) return(numeric(0))
+  bands_t &lt;- torch_tensor(as.matrix(df[, BAND_NAMES, drop = FALSE]),
+                          dtype = torch_float())
+  with_no_grad({
+    vi &lt;- model$get_synthetic_vi(bands_t)$squeeze()
+    if (vi$dim() == 0L) vi &lt;- vi$unsqueeze(1L)
+    as.numeric(vi$to(device = &quot;cpu&quot;))
+  })
+}
+
+# ── Variant B: pre-train on 4 envs → freeze encoder → fine-tune head ───────
+# Pre-trains on the other 4 environments, then for each fold within the target
+# environment freezes the encoder and fine-tunes only the prediction head and
+# environment embeddings on the adaptation (train) GIDs, then predicts the test GIDs.
+adapt_finetune_cv &lt;- function(data_raw, trait, env_levels,
+                               n_folds        = 5,   n_reps         = 3,
+                               pretrain_epochs = 300, pretrain_lr    = 3e-3,
+                               finetune_epochs = 50,  finetune_lr    = 1e-3,
+                               batch_size      = 64) {
+  envs &lt;- sort(unique(as.character(data_raw$Env)))
+
+  map_dfr(envs, function(target_env) {
+    train_4env &lt;- data_raw %&gt;% filter(Env != target_env, !is.na(.data[[trait]]))
+    target_df  &lt;- data_raw %&gt;% filter(Env == target_env,  !is.na(.data[[trait]]))
+    gids       &lt;- unique(target_df$GID)
+    if (nrow(train_4env) &lt; 10 || length(gids) &lt; n_folds) return(NULL)
+
+    # Scaler fit on 4 training environments — applied to adaptation &amp; test folds too
+    sc_out   &lt;- scale_from_train(train_4env, train_4env, trait)
+    train_sc &lt;- sc_out$df
+    trait_mn &lt;- sc_out$trait_mn
+    trait_sd &lt;- sc_out$trait_sd
+
+    target_env_i &lt;- match(target_env, env_levels)  # 1-based embedding index
+
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      # Step 1: pre-train on 4 environments
+      pretrained &lt;- tryCatch(
+        train_model(train_sc, trait, env_levels = env_levels,
+                    epochs = pretrain_epochs, lr = pretrain_lr,
+                    batch_size = batch_size, seed = rep_i * 100L),
+        error = function(e) { message(target_env, &quot; rep&quot;, rep_i, &quot;: &quot;, e$message); NULL }
+      )
+      if (is.null(pretrained)) return(NULL)
+
+      pretrained_state &lt;- pretrained$state_dict()  # snapshot before any fine-tuning
+
+      # K-fold CV within target environment (by GID)
+      set.seed(rep_i * 77L)
+      shuffled &lt;- sample(gids)
+      fold_id  &lt;- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold &lt;- tibble(GID = shuffled, fold = fold_id)
+
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids  &lt;- gid_fold$GID[gid_fold$fold == f]
+        adapt_gids &lt;- gids[!gids %in% test_gids]
+        adapt_df   &lt;- target_df %&gt;% filter(GID %in% adapt_gids)
+        test_df    &lt;- target_df %&gt;% filter(GID %in% test_gids)
+        if (nrow(adapt_df) &lt; 5 || nrow(test_df) &lt; 2) return(NULL)
+
+        # Scale with train_4env stats (bands 0-1, trait z-scored for head loss)
+        adapt_sc &lt;- scale_from_train(adapt_df, train_4env, trait)$df
+        test_sc  &lt;- scale_from_train(test_df,  train_4env, trait)$df
+
+        # Fresh model initialised from pre-trained weights (clean copy per fold)
+        model_ft &lt;- SyntheticVIModel(n_bands = length(BAND_NAMES),
+                                      n_envs  = length(env_levels),
+                                      d_embed = 4L, pred_h = 8L)
+        model_ft$load_state_dict(pretrained_state)
+
+        # Freeze encoder — gradients disabled for all BandEncoder parameters
+        for (p in model_ft$encoder$parameters) p$requires_grad_(FALSE)
+
+        # Collect only trainable parameters (head + embeddings)
+        trainable &lt;- list(
+          model_ft$env_emb$weight,
+          model_ft$pred_fc1$weight, model_ft$pred_fc1$bias,
+          model_ft$pred_fc2$weight, model_ft$pred_fc2$bias
+        )
+        opt_ft &lt;- optim_adam(trainable, lr = finetune_lr, weight_decay = 1e-4)
+
+        adapt_ten     &lt;- make_tensors(adapt_sc, trait)
+        n_adapt       &lt;- adapt_ten$bands$size(1)
+        adapt_env_idx &lt;- torch_tensor(rep(target_env_i, n_adapt), dtype = torch_long())
+
+        # Step 2: fine-tune head on adaptation fold
+        model_ft$train()
+        for (ep in seq_len(finetune_epochs)) {
+          idx_s &lt;- sample(n_adapt)
+          for (i in seq(1, n_adapt, by = batch_size)) {
+            bi &lt;- idx_s[i:min(i + batch_size - 1, n_adapt)]
+            # Recreate env index tensor directly to avoid 0D scalar from single-element indexing
+            ei &lt;- torch_tensor(rep(target_env_i, length(bi)), dtype = torch_long())
+            opt_ft$zero_grad()
+            pred_ft &lt;- model_ft(adapt_ten$bands[bi, , drop = FALSE], env_idx = ei)
+            loss &lt;- nnf_mse_loss(pred_ft, adapt_ten$y[bi, , drop = FALSE])
+            loss$backward()
+            nn_utils_clip_grad_norm_(trainable, 1.0)
+            opt_ft$step()
+          }
+        }
+        model_ft$eval()
+
+        # Step 3: predict test fold
+        test_ten   &lt;- make_tensors(test_sc, trait)
+        te_env_idx &lt;- torch_tensor(
+          rep(target_env_i, test_ten$bands$size(1)), dtype = torch_long()
+        )
+        with_no_grad({
+          pred_z &lt;- model_ft(test_ten$bands, env_idx = te_env_idx)$squeeze()$to(device = &quot;cpu&quot;)
+        })
+        pred &lt;- as.numeric(pred_z) * trait_sd + trait_mn
+        obs  &lt;- as.numeric(test_ten$y$squeeze()) * trait_sd + trait_mn
+
+        tibble(Env = target_env, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = &quot;complete.obs&quot;),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── Variant C: pre-train on 4 envs → freeze encoder → linear regression ────
+# Pre-trains on the other 4 environments, extracts the Synthetic VI from the
+# frozen encoder, then fits a simple OLS (trait ~ SynVI) on the adaptation GIDs
+# and predicts the test GIDs. No gradient updates to the DNN in this stage.
+adapt_lm_cv &lt;- function(data_raw, trait, env_levels,
+                         n_folds        = 5, n_reps      = 3,
+                         pretrain_epochs = 300, pretrain_lr = 3e-3,
+                         batch_size      = 64) {
+  envs &lt;- sort(unique(as.character(data_raw$Env)))
+
+  map_dfr(envs, function(target_env) {
+    train_4env &lt;- data_raw %&gt;% filter(Env != target_env, !is.na(.data[[trait]]))
+    target_df  &lt;- data_raw %&gt;% filter(Env == target_env,  !is.na(.data[[trait]]))
+    gids       &lt;- unique(target_df$GID)
+    if (nrow(train_4env) &lt; 10 || length(gids) &lt; n_folds) return(NULL)
+
+    sc_out   &lt;- scale_from_train(train_4env, train_4env, trait)
+    train_sc &lt;- sc_out$df
+
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      # Step 1: pre-train encoder on 4 environments
+      pretrained &lt;- tryCatch(
+        train_model(train_sc, trait, env_levels = env_levels,
+                    epochs = pretrain_epochs, lr = pretrain_lr,
+                    batch_size = batch_size, seed = rep_i * 100L),
+        error = function(e) { message(target_env, &quot; rep&quot;, rep_i, &quot;: &quot;, e$message); NULL }
+      )
+      if (is.null(pretrained)) return(NULL)
+      pretrained$eval()
+
+      # K-fold CV within target environment (by GID)
+      set.seed(rep_i * 77L)
+      shuffled &lt;- sample(gids)
+      fold_id  &lt;- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold &lt;- tibble(GID = shuffled, fold = fold_id)
+
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids  &lt;- gid_fold$GID[gid_fold$fold == f]
+        adapt_gids &lt;- gids[!gids %in% test_gids]
+        adapt_df   &lt;- target_df %&gt;% filter(GID %in% adapt_gids)
+        test_df    &lt;- target_df %&gt;% filter(GID %in% test_gids)
+        if (nrow(adapt_df) &lt; 5 || nrow(test_df) &lt; 2) return(NULL)
+
+        # Scale bands using train_4env scaler (encoder trained on this scale)
+        adapt_sc_bands &lt;- scale_from_train(adapt_df, train_4env, trait)$df
+        test_sc_bands  &lt;- scale_from_train(test_df,  train_4env, trait)$df
+
+        # Step 2: extract SynVI from frozen encoder (no gradient updates)
+        synvi_adapt &lt;- extract_synvi(pretrained, adapt_sc_bands)
+        synvi_test  &lt;- extract_synvi(pretrained, test_sc_bands)
+
+        # Step 3: fit OLS on original-scale trait ~ SynVI, predict test
+        adapt_y &lt;- adapt_df[[trait]]
+        test_y  &lt;- test_df[[trait]]
+
+        lm_fit &lt;- lm(y ~ synvi, data.frame(y = adapt_y, synvi = synvi_adapt))
+        pred   &lt;- predict(lm_fit, data.frame(synvi = synvi_test))
+
+        tibble(Env = target_env, fold = f, rep = rep_i, n_test = length(test_y),
+               r    = cor(pred, test_y, use = &quot;complete.obs&quot;),
+               rmse = sqrt(mean((pred - test_y)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}</code></pre>
+<pre class="r"><code># ── Select traits with enough observations ────────────────────────────────
+min_obs &lt;- 30
+usable_traits &lt;- trait_cols[
+  sapply(trait_cols, function(t) sum(!is.na(model_data_raw[[t]]))) &gt;= min_obs
+]
+cat(&quot;Traits with &gt;=&quot;, min_obs, &quot;observations:&quot;, length(usable_traits), &quot;\n&quot;)</code></pre>
+<pre><code>Traits with &gt;= 30 observations: 1 </code></pre>
+<pre class="r"><code>print(usable_traits)</code></pre>
+<pre><code>[1] &quot;yield_kgha&quot;</code></pre>
+<pre class="r"><code>usable_traits &lt;- usable_traits[1]   # user selection – expand as needed
+
+# ── Environment levels: consistent ordering used for embedding indices ────
+env_levels &lt;- sort(unique(as.character(model_data_raw$Env)))
+cat(&quot;Environment levels (embedding order):&quot;, paste(env_levels, collapse = &quot;, &quot;), &quot;\n&quot;)</code></pre>
+<pre><code>Environment levels (embedding order): HELF24, KET21, MCG23, SNY22 </code></pre>
+<pre class="r"><code># ── LOEO CV (raw data → per-fold scaling inside loeo_cv) ─────────────────
+cat(&quot;\nRunning LOEO CV...\n&quot;)</code></pre>
+<pre><code>
+Running LOEO CV...</code></pre>
+<pre class="r"><code>cv_loeo &lt;- map_dfr(usable_traits, function(trait) {
+  cat(&quot;  trait:&quot;, trait, &quot;\n&quot;)
+  res       &lt;- loeo_cv(model_data_raw, trait, env_levels = env_levels,
+                       n_reps = 3, epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait &lt;- trait
+  res
+})</code></pre>
+<pre><code>  trait: yield_kgha </code></pre>
+<pre class="r"><code>cat(&quot;LOEO CV done. Rows:&quot;, nrow(cv_loeo), &quot;\n&quot;)</code></pre>
+<pre><code>LOEO CV done. Rows: 12 </code></pre>
+<pre class="r"><code># ── Within-environment 5-fold CV (raw data → per-fold scaling inside) ────
+cat(&quot;\nRunning within-environment 5-fold CV...\n&quot;)</code></pre>
+<pre><code>
+Running within-environment 5-fold CV...</code></pre>
+<pre class="r"><code>cv_wenv &lt;- map_dfr(usable_traits, function(trait) {
+  cat(&quot;  trait:&quot;, trait, &quot;\n&quot;)
+  res       &lt;- within_env_cv(model_data_raw, trait, env_levels = env_levels,
+                              n_folds = 5, n_reps = 3,
+                              epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait &lt;- trait
+  res
+})</code></pre>
+<pre><code>  trait: yield_kgha </code></pre>
+<pre class="r"><code>cat(&quot;Within-env CV done. Rows:&quot;, nrow(cv_wenv), &quot;\n&quot;)</code></pre>
+<pre><code>Within-env CV done. Rows: 59 </code></pre>
+<div class="alert alert-warning">
+<p>
+<strong>Warning:</strong> The above code chunk cached its results, but
+it won’t be re-run if previous chunks it depends on are updated. If you
+need to use caching, it is highly recommended to also set
+<code>knitr::opts_chunk$set(autodep = TRUE)</code> at the top of the
+file (in a chunk that is not cached). Alternatively, you can customize
+the option <code>dependson</code> for each individual chunk that is
+cached. Using either <code>autodep</code> or <code>dependson</code> will
+remove this warning. See the
+<a href="https://yihui.name/knitr/options/#cache"
+>knitr cache options</a> for more details.
+</p>
+</div>
+<pre class="r"><code># ── NDVI linear-regression baseline (same CV design as DNN) ─────────────
+if (!&quot;NDVI_raw&quot; %in% names(model_data_raw)) {
+  warning(&quot;NDVI_raw not found in model_data_raw — skipping NDVI baseline.&quot;)
+  ndvi_loeo &lt;- tibble()
+  ndvi_wenv &lt;- tibble()
+} else {
+  cat(&quot;Running NDVI LOEO baseline CV...\n&quot;)
+  ndvi_loeo &lt;- map_dfr(usable_traits, function(trait) {
+    res       &lt;- linreg_loeo_cv(model_data_raw, &quot;NDVI_raw&quot;, trait)
+    res$trait &lt;- trait
+    res
+  })
+  cat(&quot;NDVI LOEO done. Rows:&quot;, nrow(ndvi_loeo), &quot;\n&quot;)
+
+  cat(&quot;Running NDVI within-env baseline CV...\n&quot;)
+  ndvi_wenv &lt;- map_dfr(usable_traits, function(trait) {
+    res       &lt;- linreg_wenv_cv(model_data_raw, &quot;NDVI_raw&quot;, trait)
+    res$trait &lt;- trait
+    res
+  })
+  cat(&quot;NDVI within-env done. Rows:&quot;, nrow(ndvi_wenv), &quot;\n&quot;)
+}</code></pre>
+<pre><code>Running NDVI LOEO baseline CV...
+NDVI LOEO done. Rows: 4 
+Running NDVI within-env baseline CV...
+NDVI within-env done. Rows: 60 </code></pre>
+<pre class="r"><code># ── Within-environment mean-centering comparison ───────────────────────────
+# For each band and the trait: subtract the environment mean (not SD-scaled).
+# NDVI is computed from original reflectances then centered by env mean NDVI.
+# At LOEO test time each environment is centered on its own mean, so no
+# information leaks between training and test environments.
+
+center_within_env &lt;- function(data_raw, trait) {
+  data_raw %&gt;%
+    group_by(Env) %&gt;%
+    mutate(
+      across(all_of(BAND_NAMES), ~ . - mean(., na.rm = TRUE)),
+      !!trait        := .data[[trait]] - mean(.data[[trait]], na.rm = TRUE),
+      NDVI_centered  = NDVI_raw - mean(NDVI_raw, na.rm = TRUE)
+    ) %&gt;%
+    ungroup()
+}
+
+trait &lt;- usable_traits[1]
+
+# Build centered dataset from original (un-z-scored) reflectances
+model_data_centered &lt;- center_within_env(
+  model_data_raw_orig %&gt;% filter(Env != &quot;MCG25&quot;), trait
+)
+
+cat(&quot;Running DNN LOEO CV on centered data...\n&quot;)</code></pre>
+<pre><code>Running DNN LOEO CV on centered data...</code></pre>
+<pre class="r"><code>cv_loeo_centered &lt;- map_dfr(usable_traits, function(tr) {
+  res       &lt;- loeo_cv(model_data_centered, tr, env_levels = env_levels,
+                       n_reps = 3, epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait &lt;- tr
+  res
+})
+cat(&quot;DNN centered LOEO done. Rows:&quot;, nrow(cv_loeo_centered), &quot;\n&quot;)</code></pre>
+<pre><code>DNN centered LOEO done. Rows: 12 </code></pre>
+<pre class="r"><code>cat(&quot;Running NDVI LOEO CV on centered data...\n&quot;)</code></pre>
+<pre><code>Running NDVI LOEO CV on centered data...</code></pre>
+<pre class="r"><code>ndvi_loeo_centered &lt;- map_dfr(usable_traits, function(tr) {
+  res       &lt;- linreg_loeo_cv(model_data_centered, &quot;NDVI_centered&quot;, tr)
+  res$trait &lt;- tr
+  res
+})
+cat(&quot;NDVI centered LOEO done. Rows:&quot;, nrow(ndvi_loeo_centered), &quot;\n&quot;)</code></pre>
+<pre><code>NDVI centered LOEO done. Rows: 4 </code></pre>
+</div>
+<div id="results-cross-validation-accuracy" class="section level1"
+number="7">
+<h1><span class="header-section-number">7</span> Results:
+Cross-Validation Accuracy</h1>
+<div id="leave-one-environment-out-loeo-1" class="section level2"
+number="7.1">
+<h2><span class="header-section-number">7.1</span>
+Leave-One-Environment-Out (LOEO)</h2>
+<pre class="r"><code>loeo_fold &lt;- cv_loeo %&gt;%
+  filter(!is.na(r)) %&gt;%
+  group_by(trait, held_env) %&gt;%
+  summarise(r      = mean(r,      na.rm = TRUE),
+            rmse   = mean(rmse,   na.rm = TRUE),
+            n_test = first(n_test),
+            .groups = &quot;drop&quot;)
+
+loeo_summary &lt;- loeo_fold %&gt;%
+  group_by(trait) %&gt;%
+  summarise(mean_r    = mean(r,    na.rm = TRUE),
+            sd_r      = sd(r,     na.rm = TRUE),
+            mean_rmse = mean(rmse, na.rm = TRUE),
+            n_folds   = n(),
+            .groups   = &quot;drop&quot;) %&gt;%
+  arrange(desc(mean_r))
+
+loeo_summary %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;,&quot;Mean r&quot;,&quot;SD r&quot;,&quot;Mean RMSE&quot;,&quot;Folds&quot;),
+        caption   = &quot;LOEO CV: DNN Synthetic VI accuracy (mean over 5 held-out environments, 3 training reps each)&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE) %&gt;%
+  column_spec(2, bold = TRUE,
+              color = ifelse(loeo_summary$mean_r &gt; 0.5, &quot;green&quot;, &quot;black&quot;))</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+LOEO CV: DNN Synthetic VI accuracy (mean over 5 held-out environments, 3
+training reps each)
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+Mean r
+</th>
+<th style="text-align:right;">
+SD r
+</th>
+<th style="text-align:right;">
+Mean RMSE
+</th>
+<th style="text-align:right;">
+Folds
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;font-weight: bold;color: black !important;">
+0.496
+</td>
+<td style="text-align:right;">
+0.321
+</td>
+<td style="text-align:right;">
+1016.261
+</td>
+<td style="text-align:right;">
+4
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cat(&quot;\nPer-environment LOEO results:\n&quot;)</code></pre>
+<pre><code>
+Per-environment LOEO results:</code></pre>
+<pre class="r"><code>loeo_fold %&gt;%
+  arrange(trait, held_env) %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;,&quot;Held-out env&quot;,&quot;Mean r&quot;,&quot;Mean RMSE&quot;,&quot;N test&quot;),
+        caption   = &quot;LOEO CV per held-out environment&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+LOEO CV per held-out environment
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:left;">
+Held-out env
+</th>
+<th style="text-align:right;">
+Mean r
+</th>
+<th style="text-align:right;">
+Mean RMSE
+</th>
+<th style="text-align:right;">
+N test
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+HELF24
+</td>
+<td style="text-align:right;">
+0.180
+</td>
+<td style="text-align:right;">
+1105.968
+</td>
+<td style="text-align:right;">
+312
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+KET21
+</td>
+<td style="text-align:right;">
+0.605
+</td>
+<td style="text-align:right;">
+711.497
+</td>
+<td style="text-align:right;">
+466
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+MCG23
+</td>
+<td style="text-align:right;">
+0.896
+</td>
+<td style="text-align:right;">
+1129.812
+</td>
+<td style="text-align:right;">
+504
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+SNY22
+</td>
+<td style="text-align:right;">
+0.302
+</td>
+<td style="text-align:right;">
+1117.765
+</td>
+<td style="text-align:right;">
+424
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cv_loeo %&gt;%
+  filter(!is.na(r)) %&gt;%
+  ggplot(aes(x = r, y = reorder(held_env, r, mean, na.rm = TRUE),
+             colour = held_env)) +
+  geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey60&quot;) +
+  geom_jitter(height = 0.12, size = 2.5, alpha = 0.7) +
+  stat_summary(fun = mean, geom = &quot;crossbar&quot;, width = 0.45,
+               colour = &quot;black&quot;, linewidth = 0.7) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_brewer(palette = &quot;Set2&quot;) +
+  labs(x = &quot;Pearson r (LOEO)&quot;, y = &quot;Held-out environment&quot;,
+       title  = &quot;DNN Synthetic VI – LOEO Accuracy&quot;,
+       colour = &quot;Environment&quot;) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/loeo-accuracy-plot-1.png" alt="LOEO CV: dots = training repetitions, crossbar = mean r" width="960" />
+<p class="caption">
+LOEO CV: dots = training repetitions, crossbar = mean r
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-loeo-accuracy-plot-1">
+Past versions of loeo-accuracy-plot-1.png
+</button>
+</p>
+<div id="fig-loeo-accuracy-plot-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/loeo-accuracy-plot-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/loeo-accuracy-plot-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/loeo-accuracy-plot-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/loeo-accuracy-plot-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="within-environment-5-fold-cv-by-gid-1" class="section level2"
+number="7.2">
+<h2><span class="header-section-number">7.2</span> Within-Environment
+5-Fold CV (by GID)</h2>
+<pre class="r"><code>wenv_fold_summ &lt;- cv_wenv %&gt;%
+  filter(!is.na(r)) %&gt;%
+  group_by(trait, Env, fold) %&gt;%
+  summarise(r    = mean(r,    na.rm = TRUE),
+            rmse = mean(rmse, na.rm = TRUE),
+            .groups = &quot;drop&quot;)
+
+wenv_env_summary &lt;- wenv_fold_summ %&gt;%
+  group_by(trait, Env) %&gt;%
+  summarise(mean_r    = mean(r,    na.rm = TRUE),
+            sd_r      = sd(r,     na.rm = TRUE),
+            mean_rmse = mean(rmse, na.rm = TRUE),
+            n_folds   = n(),
+            .groups   = &quot;drop&quot;)
+
+wenv_summary &lt;- wenv_env_summary %&gt;%
+  group_by(trait) %&gt;%
+  summarise(mean_r    = mean(mean_r,    na.rm = TRUE),
+            sd_r      = mean(sd_r,      na.rm = TRUE),
+            mean_rmse = mean(mean_rmse, na.rm = TRUE),
+            .groups   = &quot;drop&quot;)
+
+wenv_summary %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;,&quot;Mean r&quot;,&quot;Mean within-env SD r&quot;,&quot;Mean RMSE&quot;),
+        caption   = &quot;Within-environment 5-fold CV (by GID): mean Pearson r across all environments and folds&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE) %&gt;%
+  column_spec(2, bold = TRUE,
+              color = ifelse(wenv_summary$mean_r &gt; 0.5, &quot;green&quot;, &quot;black&quot;))</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Within-environment 5-fold CV (by GID): mean Pearson r across all
+environments and folds
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+Mean r
+</th>
+<th style="text-align:right;">
+Mean within-env SD r
+</th>
+<th style="text-align:right;">
+Mean RMSE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;font-weight: bold;color: green !important;">
+0.712
+</td>
+<td style="text-align:right;">
+0.043
+</td>
+<td style="text-align:right;">
+669.067
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cat(&quot;\nPer-environment within-env CV results:\n&quot;)</code></pre>
+<pre><code>
+Per-environment within-env CV results:</code></pre>
+<pre class="r"><code>wenv_env_summary %&gt;%
+  arrange(trait, Env) %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;,&quot;Environment&quot;,&quot;Mean r&quot;,&quot;SD r&quot;,&quot;Mean RMSE&quot;,&quot;N folds&quot;),
+        caption   = &quot;Within-environment 5-fold CV: per-environment summary&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Within-environment 5-fold CV: per-environment summary
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:left;">
+Environment
+</th>
+<th style="text-align:right;">
+Mean r
+</th>
+<th style="text-align:right;">
+SD r
+</th>
+<th style="text-align:right;">
+Mean RMSE
+</th>
+<th style="text-align:right;">
+N folds
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+HELF24
+</td>
+<td style="text-align:right;">
+0.524
+</td>
+<td style="text-align:right;">
+0.094
+</td>
+<td style="text-align:right;">
+715.552
+</td>
+<td style="text-align:right;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+KET21
+</td>
+<td style="text-align:right;">
+0.637
+</td>
+<td style="text-align:right;">
+0.042
+</td>
+<td style="text-align:right;">
+687.009
+</td>
+<td style="text-align:right;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+MCG23
+</td>
+<td style="text-align:right;">
+0.913
+</td>
+<td style="text-align:right;">
+0.010
+</td>
+<td style="text-align:right;">
+570.588
+</td>
+<td style="text-align:right;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+SNY22
+</td>
+<td style="text-align:right;">
+0.776
+</td>
+<td style="text-align:right;">
+0.029
+</td>
+<td style="text-align:right;">
+703.120
+</td>
+<td style="text-align:right;">
+5
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cv_wenv %&gt;%
+  filter(!is.na(r)) %&gt;%
+  ggplot(aes(x = r, y = reorder(Env, r, mean, na.rm = TRUE),
+             colour = Env)) +
+  geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey60&quot;) +
+  geom_jitter(height = 0.12, size = 2, alpha = 0.6) +
+  stat_summary(fun = mean, geom = &quot;crossbar&quot;, width = 0.45,
+               colour = &quot;black&quot;, linewidth = 0.7) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_brewer(palette = &quot;Set2&quot;) +
+  labs(x = &quot;Pearson r (within-env 5-fold CV by GID)&quot;, y = &quot;Environment&quot;,
+       title  = &quot;DNN Synthetic VI – Within-Environment CV Accuracy&quot;,
+       colour = &quot;Environment&quot;) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/wenv-accuracy-plot-1.png" alt="Within-env CV: dots = individual folds × reps, crossbar = mean r per environment" width="960" />
+<p class="caption">
+Within-env CV: dots = individual folds × reps, crossbar = mean r per
+environment
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-wenv-accuracy-plot-1">
+Past versions of wenv-accuracy-plot-1.png
+</button>
+</p>
+<div id="fig-wenv-accuracy-plot-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/wenv-accuracy-plot-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/wenv-accuracy-plot-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/wenv-accuracy-plot-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/wenv-accuracy-plot-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="cv-scenario-comparison" class="section level2" number="7.3">
+<h2><span class="header-section-number">7.3</span> CV Scenario
+Comparison</h2>
+<pre class="r"><code>cv_scenario_tbl &lt;- bind_rows(
+  loeo_summary  %&gt;% select(trait, mean_r, sd_r, mean_rmse) %&gt;% mutate(CV = &quot;LOEO&quot;),
+  wenv_summary  %&gt;% select(trait, mean_r, sd_r, mean_rmse) %&gt;% mutate(CV = &quot;Within-env 5-fold&quot;)
+)
+
+cv_scenario_tbl %&gt;%
+  arrange(trait, CV) %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;,&quot;Mean r&quot;,&quot;SD r&quot;,&quot;Mean RMSE&quot;,&quot;CV scenario&quot;),
+        caption   = &quot;DNN Synthetic VI: LOEO vs. within-environment CV&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+DNN Synthetic VI: LOEO vs. within-environment CV
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+Mean r
+</th>
+<th style="text-align:right;">
+SD r
+</th>
+<th style="text-align:right;">
+Mean RMSE
+</th>
+<th style="text-align:left;">
+CV scenario
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.496
+</td>
+<td style="text-align:right;">
+0.321
+</td>
+<td style="text-align:right;">
+1016.261
+</td>
+<td style="text-align:left;">
+LOEO
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.712
+</td>
+<td style="text-align:right;">
+0.043
+</td>
+<td style="text-align:right;">
+669.067
+</td>
+<td style="text-align:left;">
+Within-env 5-fold
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cv_scenario_tbl %&gt;%
+  ggplot(aes(x = mean_r,
+             y = reorder(trait, mean_r, max, na.rm = TRUE),
+             colour = CV, shape = CV)) +
+  geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey60&quot;) +
+  geom_errorbarh(aes(xmin = mean_r - sd_r, xmax = mean_r + sd_r),
+                 height = 0.2, alpha = 0.6) +
+  geom_point(size = 4) +
+  scale_colour_manual(values = c(LOEO = &quot;#e34a33&quot;,
+                                 `Within-env 5-fold` = &quot;#2c7bb6&quot;)) +
+  labs(x = &quot;Mean Pearson r&quot;, y = NULL,
+       title  = &quot;LOEO vs. within-environment CV accuracy&quot;,
+       colour = &quot;CV scenario&quot;, shape = &quot;CV scenario&quot;) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/cv-scenario-plot-1.png" alt="LOEO vs. within-environment CV: mean Pearson r (error bar = SD across folds/envs)" width="960" />
+<p class="caption">
+LOEO vs. within-environment CV: mean Pearson r (error bar = SD across
+folds/envs)
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-cv-scenario-plot-1">
+Past versions of cv-scenario-plot-1.png
+</button>
+</p>
+<div id="fig-cv-scenario-plot-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/cv-scenario-plot-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/cv-scenario-plot-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/cv-scenario-plot-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div id="ndvi-baseline-comparison" class="section level1" number="8">
+<h1><span class="header-section-number">8</span> NDVI Baseline
+Comparison</h1>
+<p>NDVI-based linear regression was run under the same two CV schemes
+(LOEO and within-environment 5-fold CV by GID) as the DNN, operating on
+raw (unscaled) trait values so RMSE is directly comparable.</p>
+<div id="ndvi-baseline-loeo" class="section level2" number="8.1">
+<h2><span class="header-section-number">8.1</span> NDVI Baseline —
+LOEO</h2>
+<pre class="r"><code>if (nrow(ndvi_loeo) &gt; 0) {
+  ndvi_loeo_fold &lt;- ndvi_loeo %&gt;%
+    filter(!is.na(r)) %&gt;%
+    group_by(trait, held_env) %&gt;%
+    summarise(r    = mean(r,    na.rm = TRUE),
+              rmse = mean(rmse, na.rm = TRUE),
+              .groups = &quot;drop&quot;)
+
+  ndvi_loeo_summary &lt;- ndvi_loeo_fold %&gt;%
+    group_by(trait) %&gt;%
+    summarise(ndvi_r    = mean(r,    na.rm = TRUE),
+              ndvi_rmse = mean(rmse, na.rm = TRUE),
+              .groups = &quot;drop&quot;)
+
+  ndvi_loeo_summary %&gt;%
+    kable(digits = 3,
+          col.names = c(&quot;Trait&quot;, &quot;NDVI mean r (LOEO)&quot;, &quot;NDVI mean RMSE&quot;),
+          caption   = &quot;NDVI linear regression — LOEO accuracy&quot;) %&gt;%
+    kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                  full_width = FALSE)
+} else {
+  cat(&quot;NDVI baseline not available.\n&quot;)
+}</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+NDVI linear regression — LOEO accuracy
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+NDVI mean r (LOEO)
+</th>
+<th style="text-align:right;">
+NDVI mean RMSE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.548
+</td>
+<td style="text-align:right;">
+1016.976
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="ndvi-baseline-within-environment-5-fold-cv"
+class="section level2" number="8.2">
+<h2><span class="header-section-number">8.2</span> NDVI Baseline —
+Within-Environment 5-Fold CV</h2>
+<pre class="r"><code>if (nrow(ndvi_wenv) &gt; 0) {
+  ndvi_wenv_fold &lt;- ndvi_wenv %&gt;%
+    filter(!is.na(r)) %&gt;%
+    group_by(trait, Env, fold) %&gt;%
+    summarise(r    = mean(r,    na.rm = TRUE),
+              rmse = mean(rmse, na.rm = TRUE),
+              .groups = &quot;drop&quot;)
+
+  ndvi_wenv_summary &lt;- ndvi_wenv_fold %&gt;%
+    group_by(trait, Env) %&gt;%
+    summarise(mean_r    = mean(r,    na.rm = TRUE),
+              mean_rmse = mean(rmse, na.rm = TRUE),
+              .groups   = &quot;drop&quot;) %&gt;%
+    group_by(trait) %&gt;%
+    summarise(ndvi_r    = mean(mean_r,    na.rm = TRUE),
+              ndvi_rmse = mean(mean_rmse, na.rm = TRUE),
+              .groups   = &quot;drop&quot;)
+
+  ndvi_wenv_summary %&gt;%
+    kable(digits = 3,
+          col.names = c(&quot;Trait&quot;, &quot;NDVI mean r (within-env)&quot;, &quot;NDVI mean RMSE&quot;),
+          caption   = &quot;NDVI linear regression — within-environment 5-fold CV accuracy&quot;) %&gt;%
+    kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                  full_width = FALSE)
+} else {
+  cat(&quot;NDVI baseline not available.\n&quot;)
+}</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+NDVI linear regression — within-environment 5-fold CV accuracy
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+NDVI mean r (within-env)
+</th>
+<th style="text-align:right;">
+NDVI mean RMSE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.545
+</td>
+<td style="text-align:right;">
+798.554
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="dnn-synthetic-vi-vs.-ndvi-combined-comparison"
+class="section level2" number="8.3">
+<h2><span class="header-section-number">8.3</span> DNN Synthetic VI
+vs. NDVI — Combined Comparison</h2>
+<pre class="r"><code>if (nrow(ndvi_loeo) &gt; 0 &amp;&amp; nrow(ndvi_wenv) &gt; 0) {
+  dnn_loeo_r  &lt;- loeo_summary  %&gt;% select(trait, dnn_loeo_r  = mean_r)
+  dnn_wenv_r  &lt;- wenv_summary  %&gt;% select(trait, dnn_wenv_r  = mean_r)
+  ndvi_loeo_r &lt;- ndvi_loeo_summary %&gt;% select(trait, ndvi_loeo_r = ndvi_r)
+  ndvi_wenv_r &lt;- ndvi_wenv_summary %&gt;% select(trait, ndvi_wenv_r = ndvi_r)
+
+  full_comparison &lt;- dnn_loeo_r %&gt;%
+    left_join(ndvi_loeo_r, by = &quot;trait&quot;) %&gt;%
+    left_join(dnn_wenv_r,  by = &quot;trait&quot;) %&gt;%
+    left_join(ndvi_wenv_r, by = &quot;trait&quot;) %&gt;%
+    mutate(delta_loeo = dnn_loeo_r - ndvi_loeo_r,
+           delta_wenv = dnn_wenv_r - ndvi_wenv_r)
+
+  full_comparison %&gt;%
+    arrange(desc(delta_loeo)) %&gt;%
+    kable(digits = 3,
+          col.names = c(&quot;Trait&quot;,
+                        &quot;DNN r (LOEO)&quot;, &quot;NDVI r (LOEO)&quot;, &quot;Δr LOEO&quot;,
+                        &quot;DNN r (within-env)&quot;, &quot;NDVI r (within-env)&quot;, &quot;Δr within-env&quot;),
+          caption = &quot;DNN Synthetic VI vs. NDVI linear regression — both CV scenarios&quot;) %&gt;%
+    kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                  full_width = FALSE) %&gt;%
+    column_spec(4, bold = TRUE,
+                color = ifelse(full_comparison$delta_loeo &gt; 0, &quot;forestgreen&quot;, &quot;firebrick&quot;)) %&gt;%
+    column_spec(7, bold = TRUE,
+                color = ifelse(full_comparison$delta_wenv &gt; 0, &quot;forestgreen&quot;, &quot;firebrick&quot;))
+}</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+DNN Synthetic VI vs. NDVI linear regression — both CV scenarios
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+DNN r (LOEO)
+</th>
+<th style="text-align:right;">
+NDVI r (LOEO)
+</th>
+<th style="text-align:right;">
+Δr LOEO
+</th>
+<th style="text-align:right;">
+DNN r (within-env)
+</th>
+<th style="text-align:right;">
+NDVI r (within-env)
+</th>
+<th style="text-align:right;">
+Δr within-env
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.496
+</td>
+<td style="text-align:right;">
+0.548
+</td>
+<td style="text-align:right;font-weight: bold;color: firebrick !important;">
+0.712
+</td>
+<td style="text-align:right;">
+0.545
+</td>
+<td style="text-align:right;">
+-0.052
+</td>
+<td style="text-align:right;font-weight: bold;color: forestgreen !important;">
+0.167
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>if (nrow(ndvi_loeo) &gt; 0 &amp;&amp; nrow(ndvi_wenv) &gt; 0 &amp;&amp; exists(&quot;full_comparison&quot;)) {
+  plot_df &lt;- bind_rows(
+    full_comparison %&gt;%
+      select(trait, r = dnn_loeo_r)  %&gt;% mutate(model = &quot;DNN Synthetic VI&quot;,    CV = &quot;LOEO&quot;),
+    full_comparison %&gt;%
+      select(trait, r = ndvi_loeo_r) %&gt;% mutate(model = &quot;NDVI (linear)&quot;,       CV = &quot;LOEO&quot;),
+    full_comparison %&gt;%
+      select(trait, r = dnn_wenv_r)  %&gt;% mutate(model = &quot;DNN Synthetic VI&quot;,    CV = &quot;Within-env 5-fold&quot;),
+    full_comparison %&gt;%
+      select(trait, r = ndvi_wenv_r) %&gt;% mutate(model = &quot;NDVI (linear)&quot;,       CV = &quot;Within-env 5-fold&quot;)
+  )
+
+  ggplot(plot_df,
+         aes(x = r, y = reorder(trait, r, max, na.rm = TRUE),
+             colour = model, shape = model)) +
+    geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey60&quot;) +
+    geom_point(size = 4, alpha = 0.9) +
+    geom_line(aes(group = interaction(trait, CV)), colour = &quot;grey60&quot;,
+              linewidth = 0.5) +
+    facet_wrap(~CV, ncol = 2) +
+    scale_colour_manual(values = c(&quot;DNN Synthetic VI&quot; = &quot;#e34a33&quot;,
+                                   &quot;NDVI (linear)&quot;    = &quot;#3182bd&quot;)) +
+    scale_shape_manual(values  = c(&quot;DNN Synthetic VI&quot; = 16,
+                                   &quot;NDVI (linear)&quot;    = 17)) +
+    labs(x = &quot;Mean Pearson r&quot;, y = NULL,
+         title  = &quot;DNN Synthetic VI vs. NDVI baseline&quot;,
+         colour = NULL, shape = NULL) +
+    theme_bw(base_size = 13) +
+    theme(legend.position = &quot;bottom&quot;)
+}</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/ndvi-dnn-comparison-plot-1.png" alt="DNN Synthetic VI vs. NDVI linear regression — Pearson r by CV scenario" width="960" />
+<p class="caption">
+DNN Synthetic VI vs. NDVI linear regression — Pearson r by CV scenario
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-ndvi-dnn-comparison-plot-1">
+Past versions of ndvi-dnn-comparison-plot-1.png
+</button>
+</p>
+<div id="fig-ndvi-dnn-comparison-plot-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/ndvi-dnn-comparison-plot-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/ndvi-dnn-comparison-plot-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/ndvi-dnn-comparison-plot-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="within-environment-centering-4-way-comparison"
+class="section level2" number="8.4">
+<h2><span class="header-section-number">8.4</span> Within-Environment
+Centering: 4-Way Comparison</h2>
+<p>Compares LOEO accuracy across four modelling strategies: DNN and NDVI
+linear regression, each run on <strong>uncentered</strong> (per-env
+z-scored bands) and <strong>within-centered</strong> (env mean
+subtracted from bands and trait) data.</p>
+<pre class="r"><code># Summarise each of the four LOEO variants per environment
+summarise_loeo &lt;- function(cv_df, label) {
+  cv_df %&gt;%
+    filter(!is.na(r)) %&gt;%
+    group_by(held_env) %&gt;%
+    summarise(r = mean(r, na.rm = TRUE), .groups = &quot;drop&quot;) %&gt;%
+    mutate(model = label)
+}
+
+loeo_4way &lt;- bind_rows(
+  summarise_loeo(cv_loeo,           &quot;DNN (z-scored)&quot;),
+  summarise_loeo(cv_loeo_centered,  &quot;DNN (centered)&quot;),
+  summarise_loeo(ndvi_loeo %&gt;% rename(held_env = held_env),
+                 &quot;NDVI linear (uncentered)&quot;),
+  summarise_loeo(ndvi_loeo_centered %&gt;% rename(held_env = held_env),
+                 &quot;NDVI linear (centered)&quot;)
+)
+
+loeo_4way_wide &lt;- loeo_4way %&gt;%
+  pivot_wider(names_from = model, values_from = r) %&gt;%
+  rename(Environment = held_env) %&gt;%
+  bind_rows(
+    summarise(., across(where(is.numeric), ~ round(mean(., na.rm = TRUE), 3)),
+              Environment = &quot;**Mean**&quot;)
+  ) %&gt;%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+loeo_4way_wide %&gt;%
+  kable(digits = 3,
+        caption = &quot;LOEO Pearson r — 4-way comparison: DNN vs. NDVI linear × uncentered vs. within-centered&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+LOEO Pearson r — 4-way comparison: DNN vs. NDVI linear × uncentered
+vs. within-centered
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Environment
+</th>
+<th style="text-align:right;">
+DNN (z-scored)
+</th>
+<th style="text-align:right;">
+DNN (centered)
+</th>
+<th style="text-align:right;">
+NDVI linear (uncentered)
+</th>
+<th style="text-align:right;">
+NDVI linear (centered)
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+HELF24
+</td>
+<td style="text-align:right;">
+0.180
+</td>
+<td style="text-align:right;">
+-0.102
+</td>
+<td style="text-align:right;">
+0.413
+</td>
+<td style="text-align:right;">
+0.413
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+KET21
+</td>
+<td style="text-align:right;">
+0.605
+</td>
+<td style="text-align:right;">
+0.632
+</td>
+<td style="text-align:right;">
+0.566
+</td>
+<td style="text-align:right;">
+0.566
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MCG23
+</td>
+<td style="text-align:right;">
+0.896
+</td>
+<td style="text-align:right;">
+0.867
+</td>
+<td style="text-align:right;">
+0.871
+</td>
+<td style="text-align:right;">
+0.871
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SNY22
+</td>
+<td style="text-align:right;">
+0.302
+</td>
+<td style="text-align:right;">
+0.358
+</td>
+<td style="text-align:right;">
+0.341
+</td>
+<td style="text-align:right;">
+0.341
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+<strong>Mean</strong>
+</td>
+<td style="text-align:right;">
+0.496
+</td>
+<td style="text-align:right;">
+0.439
+</td>
+<td style="text-align:right;">
+0.548
+</td>
+<td style="text-align:right;">
+0.548
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>loeo_4way %&gt;%
+  mutate(model = factor(model,
+                        levels = c(&quot;DNN (z-scored)&quot;, &quot;DNN (centered)&quot;,
+                                   &quot;NDVI linear (uncentered)&quot;, &quot;NDVI linear (centered)&quot;))) %&gt;%
+  ggplot(aes(x = r, y = reorder(held_env, r, mean, na.rm = TRUE),
+             colour = model, shape = model)) +
+  geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey60&quot;) +
+  geom_point(size = 4, alpha = 0.9) +
+  scale_colour_manual(values = c(&quot;DNN (z-scored)&quot;          = &quot;#e34a33&quot;,
+                                 &quot;DNN (centered)&quot;           = &quot;#fc8d59&quot;,
+                                 &quot;NDVI linear (uncentered)&quot; = &quot;#2166ac&quot;,
+                                 &quot;NDVI linear (centered)&quot;   = &quot;#74add1&quot;)) +
+  scale_shape_manual(values  = c(&quot;DNN (z-scored)&quot;          = 16,
+                                 &quot;DNN (centered)&quot;           = 17,
+                                 &quot;NDVI linear (uncentered)&quot; = 15,
+                                 &quot;NDVI linear (centered)&quot;   = 18)) +
+  labs(x = &quot;LOEO Pearson r&quot;, y = &quot;Held-out environment&quot;,
+       title  = &quot;LOEO accuracy: DNN vs. NDVI × uncentered vs. within-centered&quot;,
+       colour = NULL, shape = NULL) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/centering-comparison-plot-1.png" alt="LOEO Pearson r by environment — 4 model variants" width="960" />
+<p class="caption">
+LOEO Pearson r by environment — 4 model variants
+</p>
+</div>
+</div>
+</div>
+<div id="transfer-learning-two-stage-adaptation-cv"
+class="section level1" number="9">
+<h1><span class="header-section-number">9</span> Transfer Learning:
+Two-Stage Adaptation CV</h1>
+<p>Both variants share the same outer structure:
+<strong>pre-train</strong> the full model on the four non-target
+environments, then perform K-fold CV <strong>within</strong> the target
+environment using the pre-trained encoder.</p>
+<ul>
+<li><p><strong>Variant B (fine-tune head)</strong>: the encoder is
+frozen; only the prediction head and environment embeddings are updated
+on the adaptation (train) GIDs. The target environment’s embedding was
+never seen during pre-training, so it starts from its random
+initialisation and is calibrated during fine-tuning.</p></li>
+<li><p><strong>Variant C (SynVI + linear)</strong>: the encoder is
+completely frozen; the Synthetic VI is extracted for every observation,
+and a simple OLS (trait ~ SynVI) is fit on the adaptation GIDs and used
+to predict the test GIDs — no further neural network training.</p></li>
+</ul>
+<p>Both are compared to the standard within-environment 5-fold CV that
+trains from scratch on each fold.</p>
+<pre class="r"><code>cat(&quot;Running Variant B: freeze encoder, fine-tune head...\n&quot;)</code></pre>
+<pre><code>Running Variant B: freeze encoder, fine-tune head...</code></pre>
+<pre class="r"><code>cv_adapt_finetune &lt;- map_dfr(usable_traits, function(tr) {
+  cat(&quot;  trait:&quot;, tr, &quot;\n&quot;)
+  res       &lt;- adapt_finetune_cv(model_data_raw, tr, env_levels = env_levels,
+                                  n_folds        = 5,   n_reps         = 3,
+                                  pretrain_epochs = 300, pretrain_lr    = 3e-3,
+                                  finetune_epochs = 50,  finetune_lr    = 1e-3,
+                                  batch_size      = 64)
+  res$trait &lt;- tr
+  res
+})</code></pre>
+<pre><code>  trait: yield_kgha </code></pre>
+<pre class="r"><code>cat(&quot;Variant B done. Rows:&quot;, nrow(cv_adapt_finetune), &quot;\n&quot;)</code></pre>
+<pre><code>Variant B done. Rows: 60 </code></pre>
+<pre class="r"><code>cat(&quot;\nRunning Variant C: freeze encoder, linear regression on SynVI...\n&quot;)</code></pre>
+<pre><code>
+Running Variant C: freeze encoder, linear regression on SynVI...</code></pre>
+<pre class="r"><code>cv_adapt_lm &lt;- map_dfr(usable_traits, function(tr) {
+  cat(&quot;  trait:&quot;, tr, &quot;\n&quot;)
+  res       &lt;- adapt_lm_cv(model_data_raw, tr, env_levels = env_levels,
+                            n_folds        = 5,   n_reps      = 3,
+                            pretrain_epochs = 300, pretrain_lr = 3e-3,
+                            batch_size      = 64)
+  res$trait &lt;- tr
+  res
+})</code></pre>
+<pre><code>  trait: yield_kgha </code></pre>
+<pre class="r"><code>cat(&quot;Variant C done. Rows:&quot;, nrow(cv_adapt_lm), &quot;\n&quot;)</code></pre>
+<pre><code>Variant C done. Rows: 60 </code></pre>
+<div class="alert alert-warning">
+<p>
+<strong>Warning:</strong> The above code chunk cached its results, but
+it won’t be re-run if previous chunks it depends on are updated. If you
+need to use caching, it is highly recommended to also set
+<code>knitr::opts_chunk$set(autodep = TRUE)</code> at the top of the
+file (in a chunk that is not cached). Alternatively, you can customize
+the option <code>dependson</code> for each individual chunk that is
+cached. Using either <code>autodep</code> or <code>dependson</code> will
+remove this warning. See the
+<a href="https://yihui.name/knitr/options/#cache"
+>knitr cache options</a> for more details.
+</p>
+</div>
+<pre class="r"><code>summarise_adapt_env &lt;- function(cv_df, label) {
+  cv_df %&gt;%
+    filter(!is.na(r)) %&gt;%
+    group_by(trait, Env) %&gt;%
+    summarise(r = mean(r, na.rm = TRUE), .groups = &quot;drop&quot;) %&gt;%
+    mutate(model = label)
+}
+
+adapt_comparison &lt;- bind_rows(
+  cv_wenv %&gt;%
+    filter(!is.na(r)) %&gt;%
+    group_by(trait, Env) %&gt;%
+    summarise(r = mean(r, na.rm = TRUE), .groups = &quot;drop&quot;) %&gt;%
+    mutate(model = &quot;Within-env (train from scratch)&quot;),
+  summarise_adapt_env(cv_adapt_finetune, &quot;Adapt B: fine-tune head&quot;),
+  summarise_adapt_env(cv_adapt_lm,       &quot;Adapt C: SynVI + linear&quot;)
+)
+
+adapt_overall &lt;- adapt_comparison %&gt;%
+  group_by(trait, model) %&gt;%
+  summarise(mean_r = round(mean(r, na.rm = TRUE), 3),
+            sd_r   = round(sd(r,   na.rm = TRUE), 3),
+            .groups = &quot;drop&quot;) %&gt;%
+  arrange(trait, model)
+
+adapt_overall %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;, &quot;Model&quot;, &quot;Mean r&quot;, &quot;SD r (across envs)&quot;),
+        caption = &quot;Two-stage adaptation CV: mean within-environment Pearson r&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;), full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Two-stage adaptation CV: mean within-environment Pearson r
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+Mean r
+</th>
+<th style="text-align:right;">
+SD r (across envs)
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+Adapt B: fine-tune head
+</td>
+<td style="text-align:right;">
+0.501
+</td>
+<td style="text-align:right;">
+0.317
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+Adapt C: SynVI + linear
+</td>
+<td style="text-align:right;">
+0.481
+</td>
+<td style="text-align:right;">
+0.315
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+Within-env (train from scratch)
+</td>
+<td style="text-align:right;">
+0.713
+</td>
+<td style="text-align:right;">
+0.167
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cat(&quot;\nPer-environment breakdown:\n&quot;)</code></pre>
+<pre><code>
+Per-environment breakdown:</code></pre>
+<pre class="r"><code>adapt_comparison %&gt;%
+  pivot_wider(names_from = model, values_from = r) %&gt;%
+  mutate(across(where(is.numeric), ~ round(., 3))) %&gt;%
+  arrange(trait, Env) %&gt;%
+  kable(digits = 3,
+        caption = &quot;Pearson r per environment — three within-env CV strategies&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;), full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Pearson r per environment — three within-env CV strategies
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+trait
+</th>
+<th style="text-align:left;">
+Env
+</th>
+<th style="text-align:right;">
+Within-env (train from scratch)
+</th>
+<th style="text-align:right;">
+Adapt B: fine-tune head
+</th>
+<th style="text-align:right;">
+Adapt C: SynVI + linear
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+HELF24
+</td>
+<td style="text-align:right;">
+0.528
+</td>
+<td style="text-align:right;">
+0.185
+</td>
+<td style="text-align:right;">
+0.148
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+KET21
+</td>
+<td style="text-align:right;">
+0.637
+</td>
+<td style="text-align:right;">
+0.601
+</td>
+<td style="text-align:right;">
+0.597
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+MCG23
+</td>
+<td style="text-align:right;">
+0.913
+</td>
+<td style="text-align:right;">
+0.899
+</td>
+<td style="text-align:right;">
+0.863
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:left;">
+SNY22
+</td>
+<td style="text-align:right;">
+0.776
+</td>
+<td style="text-align:right;">
+0.320
+</td>
+<td style="text-align:right;">
+0.315
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>adapt_comparison %&gt;%
+  mutate(model = factor(model,
+                        levels = c(&quot;Within-env (train from scratch)&quot;,
+                                   &quot;Adapt B: fine-tune head&quot;,
+                                   &quot;Adapt C: SynVI + linear&quot;))) %&gt;%
+  ggplot(aes(x = r, y = reorder(Env, r, mean, na.rm = TRUE),
+             colour = model, shape = model)) +
+  geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey60&quot;) +
+  geom_point(size = 4, alpha = 0.9) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_manual(values = c(
+    &quot;Within-env (train from scratch)&quot; = &quot;#2166ac&quot;,
+    &quot;Adapt B: fine-tune head&quot;         = &quot;#e34a33&quot;,
+    &quot;Adapt C: SynVI + linear&quot;         = &quot;#1a9850&quot;
+  )) +
+  scale_shape_manual(values = c(
+    &quot;Within-env (train from scratch)&quot; = 16,
+    &quot;Adapt B: fine-tune head&quot;         = 17,
+    &quot;Adapt C: SynVI + linear&quot;         = 15
+  )) +
+  labs(x = &quot;Pearson r (within-env K-fold CV)&quot;, y = &quot;Target environment&quot;,
+       title  = &quot;Two-stage adaptation CV vs. standard within-env training&quot;,
+       colour = NULL, shape = NULL) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = &quot;bottom&quot;)</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/adapt-comparison-plot-1.png" alt="Two-stage adaptation CV vs. standard within-env CV: Pearson r per environment" width="960" />
+<p class="caption">
+Two-stage adaptation CV vs. standard within-env CV: Pearson r per
+environment
+</p>
+</div>
+</div>
+<div id="full-data-models-and-synthetic-vi-extraction"
+class="section level1" number="10">
+<h1><span class="header-section-number">10</span> Full-Data Models and
+Synthetic VI Extraction</h1>
+<p>One final model per trait is trained on <strong>all five
+groups</strong> (no held-out fold). These models are used to (a) extract
+the Synthetic VI for every observation and (b) derive the VI formula
+from the learned encoder weights.</p>
+<pre class="r"><code>full_models &lt;- map(usable_traits, function(trait) {
+  cat(&quot;Training full model – trait:&quot;, trait, &quot;\n&quot;)
+  tryCatch(
+    train_model(model_data, trait, env_levels = env_levels,
+                epochs = 300, lr = 3e-3, batch_size = 64, seed = 42L),
+    error = function(e) { message(e$message); NULL }
+  )
+}) %&gt;% set_names(usable_traits)</code></pre>
+<pre><code>Training full model – trait: yield_kgha </code></pre>
+<pre class="r"><code>synvi_rows &lt;- map_dfr(usable_traits, function(trait) {
+  model &lt;- full_models[[trait]]
+  if (is.null(model)) return(NULL)
+  df &lt;- model_data %&gt;% filter(!is.na(.data[[trait]]))
+  bands_t &lt;- torch_tensor(as.matrix(df[, BAND_NAMES, drop = FALSE]),
+                          dtype = torch_float())
+  with_no_grad({
+    vi_vals &lt;- model$get_synthetic_vi(bands_t)$squeeze()$to(device = &quot;cpu&quot;)
+  })
+  df %&gt;%
+    select(Env, Timepoint, group) %&gt;%
+    mutate(SynVI = as.numeric(vi_vals), trait = trait)
+})
+
+cat(&quot;Synthetic VI extraction complete. Rows:&quot;, nrow(synvi_rows), &quot;\n&quot;)</code></pre>
+<pre><code>Synthetic VI extraction complete. Rows: 1706 </code></pre>
+<pre class="r"><code>synvi_rows %&gt;%
+  ggplot(aes(x = SynVI, fill = Env)) +
+  geom_density(alpha = 0.5) +
+  facet_grid(trait ~ Timepoint, scales = &quot;free&quot;) +
+  scale_fill_brewer(palette = &quot;Set2&quot;) +
+  labs(x = &quot;Synthetic VI value&quot;, y = &quot;Density&quot;,
+       title = &quot;Synthetic VI distributions by Timepoint × Environment&quot;,
+       fill  = &quot;Environment&quot;) +
+  theme_bw(base_size = 10) +
+  theme(strip.text.y = element_text(size = 7))</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/synthetic-vi-distributions-1.png" alt="Synthetic VI distributions by Timepoint and Environment, per trait" width="960" />
+<p class="caption">
+Synthetic VI distributions by Timepoint and Environment, per trait
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-synthetic-vi-distributions-1">
+Past versions of synthetic-vi-distributions-1.png
+</button>
+</p>
+<div id="fig-synthetic-vi-distributions-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/synthetic-vi-distributions-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/synthetic-vi-distributions-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/synthetic-vi-distributions-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/synthetic-vi-distributions-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="band-sensitivity-analysis" class="section level1" number="11">
+<h1><span class="header-section-number">11</span> Band Sensitivity
+Analysis</h1>
+<p>To interpret <em>which</em> raw bands drive each Synthetic VI we
+compute the gradient of the encoder output with respect to each band
+input (averaged over all samples).</p>
+<pre class="r"><code># Use the full-data models for gradient-based band importance
+sensitivity_list &lt;- map_dfr(usable_traits, function(trait) {
+  model &lt;- full_models[[trait]]
+  if (is.null(model)) return(NULL)
+  df &lt;- model_data %&gt;% filter(!is.na(.data[[trait]]))
+  bands_t &lt;- torch_tensor(
+    as.matrix(df[, BAND_NAMES, drop = FALSE]),
+    dtype = torch_float(), requires_grad = TRUE
+  )
+  vi &lt;- model$encoder(bands_t)
+  vi$sum()$backward()
+  grads    &lt;- as.matrix(bands_t$grad$to(device = &quot;cpu&quot;))
+  abs_mean &lt;- colMeans(abs(grads))
+  tibble(trait = trait,
+         band  = BAND_NAMES,
+         importance = abs_mean / sum(abs_mean))
+})
+
+cat(&quot;Sensitivity analysis complete.\n&quot;)</code></pre>
+<pre><code>Sensitivity analysis complete.</code></pre>
+<pre class="r"><code>if (!is.null(sensitivity_list) &amp;&amp; nrow(sensitivity_list) &gt; 0) {
+  imp_wide &lt;- sensitivity_list %&gt;%
+    pivot_wider(names_from = band, values_from = importance)
+
+  imp_mat &lt;- as.matrix(imp_wide[, BAND_NAMES])
+  rownames(imp_mat) &lt;- imp_wide$trait
+
+    sensitivity_list %&gt;%
+      ggplot(aes(x = band, y = reorder(trait, importance),
+                 fill = importance)) +
+      geom_tile(colour = &quot;white&quot;) +
+      scale_fill_gradient(low = &quot;white&quot;, high = &quot;#2166AC&quot;) +
+      labs(x = &quot;Spectral Band&quot;, y = &quot;Trait&quot;,
+           fill  = &quot;Importance&quot;,
+           title = &quot;Relative Band Importance for each Synthetic VI&quot;) +
+      theme_bw(base_size = 11)
+  }</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" alt="Normalised band importance for each Synthetic VI (gradient-based)" width="960" />
+<p class="caption">
+Normalised band importance for each Synthetic VI (gradient-based)
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-sensitivity-heatmap-1">
+Past versions of sensitivity-heatmap-1.png
+</button>
+</p>
+<div id="fig-sensitivity-heatmap-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<pre class="r"><code>if (!is.null(sensitivity_list) &amp;&amp; nrow(sensitivity_list) &gt; 0) {
+  ggplot(sensitivity_list,
+         aes(x = band, y = importance, fill = band)) +
+    geom_col() +
+    facet_wrap(~trait, ncol = 3) +
+    scale_fill_manual(values = c(blue=&quot;steelblue&quot;, green=&quot;#2ca25f&quot;,
+                                 red=&quot;#e34a33&quot;, red_edge=&quot;#f768a1&quot;,
+                                 nir=&quot;#8856a7&quot;)) +
+    labs(x = &quot;Band&quot;, y = &quot;Normalised gradient importance&quot;,
+         title = &quot;Per-trait spectral band importance&quot;) +
+    theme_bw(base_size = 11) +
+    theme(axis.text.x  = element_text(angle = 30, hjust = 1),
+          legend.position = &quot;none&quot;)
+}</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/sensitivity-barplot-1.png" alt="Band importance profiles per trait" width="960" />
+<p class="caption">
+Band importance profiles per trait
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-sensitivity-barplot-1">
+Past versions of sensitivity-barplot-1.png
+</button>
+</p>
+<div id="fig-sensitivity-barplot-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-barplot-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-barplot-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-barplot-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/sensitivity-barplot-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="synthetic-vi-formula" class="section level1" number="12">
+<h1><span class="header-section-number">12</span> Synthetic VI
+Formula</h1>
+<p>The Synthetic VI is defined by the three learned linear layers of the
+encoder:</p>
+<p><span class="math display">\[
+\mathbf{h}_1 = \text{ReLU}(\mathbf{W}_1 \mathbf{x} + \mathbf{b}_1),
+\quad
+\mathbf{h}_2 = \text{ReLU}(\mathbf{W}_2 \mathbf{h}_1 + \mathbf{b}_2),
+\quad
+\text{SynVI} = \mathbf{w}_3^\top \mathbf{h}_2 + b_3
+\]</span></p>
+<p>where <span class="math inline">\(\mathbf{x} = [\text{blue, green,
+red, red\_edge, nir}]^\top\)</span> are the min-max scaled band values.
+The tables below show the extracted weights for each trait’s full-data
+model.</p>
+<pre class="r"><code>for (trait in usable_traits) {
+  model &lt;- full_models[[trait]]
+  if (is.null(model)) next
+
+  cat(&quot;\n\n## Trait:&quot;, trait, &quot;\n\n&quot;)
+
+  # ── Extract layer weights ──────────────────────────────────────────────
+  W1 &lt;- as.matrix(model$encoder$fc1$weight$to(device=&quot;cpu&quot;)$detach())
+  b1 &lt;- as.numeric(model$encoder$fc1$bias$to(device=&quot;cpu&quot;)$detach())
+  W2 &lt;- as.matrix(model$encoder$fc2$weight$to(device=&quot;cpu&quot;)$detach())
+  b2 &lt;- as.numeric(model$encoder$fc2$bias$to(device=&quot;cpu&quot;)$detach())
+  W3 &lt;- as.numeric(model$encoder$fc3$weight$to(device=&quot;cpu&quot;)$detach())
+  b3 &lt;- as.numeric(model$encoder$fc3$bias$to(device=&quot;cpu&quot;)$detach())
+
+  # W1: shape (16, n_bands)
+  colnames(W1) &lt;- BAND_NAMES
+  rownames(W1) &lt;- paste0(&quot;h1[&quot;, seq_len(nrow(W1)), &quot;]&quot;)
+
+  cat(&quot;**Layer 1 weights** W1 (16 × n_bands) and bias b1:\n\n&quot;)
+  print(kable(round(cbind(W1, bias = b1), 4), format = &quot;html&quot;) %&gt;%
+        kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;condensed&quot;),
+                      full_width = FALSE, font_size = 10))
+
+  # W2: shape (8, 16)
+  rownames(W2) &lt;- paste0(&quot;h2[&quot;, seq_len(nrow(W2)), &quot;]&quot;)
+  colnames(W2) &lt;- paste0(&quot;h1[&quot;, seq_len(ncol(W2)), &quot;]&quot;)
+
+  cat(&quot;\n\n**Layer 2 weights** W2 (8 × 16) and bias b2:\n\n&quot;)
+  print(kable(round(cbind(W2, bias = b2), 4), format = &quot;html&quot;) %&gt;%
+        kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;condensed&quot;),
+                      full_width = FALSE, font_size = 10))
+
+  # W3: shape (1, 8) → output weights
+  w3_df &lt;- tibble(node = paste0(&quot;h2[&quot;, seq_along(W3), &quot;]&quot;),
+                  weight = round(W3, 4))
+  cat(&quot;\n\n**Layer 3 weights** w3 (1 × 8) and bias b3 =&quot;, round(b3, 4), &quot;:\n\n&quot;)
+  print(kable(w3_df, format = &quot;html&quot;,
+              col.names = c(&quot;Hidden node h2&quot;,&quot;Output weight&quot;)) %&gt;%
+        kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;condensed&quot;),
+                      full_width = FALSE, font_size = 10))
+
+  # ── Effective linear sensitivity (first-order Taylor approx) ───────────
+  # Compute mean input, propagate through network, get gradient
+  df_trait  &lt;- model_data %&gt;% filter(!is.na(.data[[trait]]))
+  mean_bands &lt;- colMeans(df_trait[, BAND_NAMES])
+  bands_t    &lt;- torch_tensor(matrix(mean_bands, nrow = 1),
+                             dtype = torch_float(), requires_grad = TRUE)
+  vi_val &lt;- model$encoder(bands_t)
+  vi_val$backward()
+  sens &lt;- as.numeric(bands_t$grad$to(device=&quot;cpu&quot;))
+  sens_df &lt;- tibble(Band = BAND_NAMES,
+                    `dVI/dBand (at mean)` = round(sens, 4),
+                    `|Sensitivity|`       = round(abs(sens), 4)) %&gt;%
+    arrange(desc(`|Sensitivity|`))
+
+  cat(&quot;\n\n**Linearised sensitivity** (gradient at mean band values):\n\n&quot;)
+  print(kable(sens_df, format = &quot;html&quot;) %&gt;%
+        kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;condensed&quot;),
+                      full_width = FALSE))
+
+  # ── Approximate explicit formula (top 3 bands, linear approx) ──────────
+  top3 &lt;- sens_df$Band[1:min(3, nrow(sens_df))]
+  coef_str &lt;- paste(
+    sprintf(&quot;%+.4f × %s&quot;, sens_df$`dVI/dBand (at mean)`[match(top3, sens_df$Band)], top3),
+    collapse = &quot; &quot;
+  )
+  cat(sprintf(
+    &quot;\n\n**Approximate linear formula** (linearised around band means):\n\n$$\\text{SynVI}_{%s} \\approx %.4f %s + \\text{const}$$\n\n&quot;,
+    trait, 0, coef_str
+  ))
+}</code></pre>
+<div id="trait-yield_kgha" class="section level2" number="12.1">
+<h2><span class="header-section-number">12.1</span> Trait:
+yield_kgha</h2>
+<p><strong>Layer 1 weights</strong> W1 (16 × n_bands) and bias b1:</p>
+<table class="table table-striped table-condensed" style="font-size: 10px; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+</th>
+<th style="text-align:right;">
+blue
+</th>
+<th style="text-align:right;">
+green
+</th>
+<th style="text-align:right;">
+red
+</th>
+<th style="text-align:right;">
+red_edge
+</th>
+<th style="text-align:right;">
+nir
+</th>
+<th style="text-align:right;">
+bias
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+h1[1]
+</td>
+<td style="text-align:right;">
+0.0710
+</td>
+<td style="text-align:right;">
+0.0974
+</td>
+<td style="text-align:right;">
+0.0097
+</td>
+<td style="text-align:right;">
+0.6006
+</td>
+<td style="text-align:right;">
+-0.6409
+</td>
+<td style="text-align:right;">
+-0.0645
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[2]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[3]
+</td>
+<td style="text-align:right;">
+0.3495
+</td>
+<td style="text-align:right;">
+0.0831
+</td>
+<td style="text-align:right;">
+-0.0476
+</td>
+<td style="text-align:right;">
+-0.1237
+</td>
+<td style="text-align:right;">
+0.0512
+</td>
+<td style="text-align:right;">
+-0.1232
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[4]
+</td>
+<td style="text-align:right;">
+0.1414
+</td>
+<td style="text-align:right;">
+0.4688
+</td>
+<td style="text-align:right;">
+0.2238
+</td>
+<td style="text-align:right;">
+-0.7969
+</td>
+<td style="text-align:right;">
+0.2977
+</td>
+<td style="text-align:right;">
+-0.1402
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[5]
+</td>
+<td style="text-align:right;">
+-0.4207
+</td>
+<td style="text-align:right;">
+-0.2771
+</td>
+<td style="text-align:right;">
+0.0362
+</td>
+<td style="text-align:right;">
+0.0194
+</td>
+<td style="text-align:right;">
+-0.2404
+</td>
+<td style="text-align:right;">
+0.4255
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[6]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[7]
+</td>
+<td style="text-align:right;">
+0.3786
+</td>
+<td style="text-align:right;">
+-0.3548
+</td>
+<td style="text-align:right;">
+0.6716
+</td>
+<td style="text-align:right;">
+-0.6608
+</td>
+<td style="text-align:right;">
+0.1363
+</td>
+<td style="text-align:right;">
+0.0491
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[8]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[9]
+</td>
+<td style="text-align:right;">
+0.0146
+</td>
+<td style="text-align:right;">
+-0.2191
+</td>
+<td style="text-align:right;">
+-0.5756
+</td>
+<td style="text-align:right;">
+0.8002
+</td>
+<td style="text-align:right;">
+0.3614
+</td>
+<td style="text-align:right;">
+-0.3687
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[10]
+</td>
+<td style="text-align:right;">
+-0.0091
+</td>
+<td style="text-align:right;">
+-0.0088
+</td>
+<td style="text-align:right;">
+-0.0051
+</td>
+<td style="text-align:right;">
+-0.0109
+</td>
+<td style="text-align:right;">
+-0.0136
+</td>
+<td style="text-align:right;">
+-0.0273
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[11]
+</td>
+<td style="text-align:right;">
+-0.5323
+</td>
+<td style="text-align:right;">
+-0.2731
+</td>
+<td style="text-align:right;">
+-1.2894
+</td>
+<td style="text-align:right;">
+0.6983
+</td>
+<td style="text-align:right;">
+0.2332
+</td>
+<td style="text-align:right;">
+0.1090
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[12]
+</td>
+<td style="text-align:right;">
+0.0068
+</td>
+<td style="text-align:right;">
+-0.0300
+</td>
+<td style="text-align:right;">
+0.2807
+</td>
+<td style="text-align:right;">
+0.0788
+</td>
+<td style="text-align:right;">
+-0.6771
+</td>
+<td style="text-align:right;">
+0.0428
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[13]
+</td>
+<td style="text-align:right;">
+0.3181
+</td>
+<td style="text-align:right;">
+-0.0063
+</td>
+<td style="text-align:right;">
+0.5173
+</td>
+<td style="text-align:right;">
+-0.7883
+</td>
+<td style="text-align:right;">
+0.3452
+</td>
+<td style="text-align:right;">
+-0.1561
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[14]
+</td>
+<td style="text-align:right;">
+-0.1312
+</td>
+<td style="text-align:right;">
+0.3074
+</td>
+<td style="text-align:right;">
+-1.1307
+</td>
+<td style="text-align:right;">
+0.2344
+</td>
+<td style="text-align:right;">
+-0.2242
+</td>
+<td style="text-align:right;">
+0.2557
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[15]
+</td>
+<td style="text-align:right;">
+0.5874
+</td>
+<td style="text-align:right;">
+0.3415
+</td>
+<td style="text-align:right;">
+0.3637
+</td>
+<td style="text-align:right;">
+-1.0370
+</td>
+<td style="text-align:right;">
+0.1273
+</td>
+<td style="text-align:right;">
+-0.1668
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h1[16]
+</td>
+<td style="text-align:right;">
+-0.1574
+</td>
+<td style="text-align:right;">
+-0.1143
+</td>
+<td style="text-align:right;">
+-0.5443
+</td>
+<td style="text-align:right;">
+0.5857
+</td>
+<td style="text-align:right;">
+0.0461
+</td>
+<td style="text-align:right;">
+0.0075
+</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Layer 2 weights</strong> W2 (8 × 16) and bias b2:</p>
+<table class="table table-striped table-condensed" style="font-size: 10px; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+</th>
+<th style="text-align:right;">
+h1[1]
+</th>
+<th style="text-align:right;">
+h1[2]
+</th>
+<th style="text-align:right;">
+h1[3]
+</th>
+<th style="text-align:right;">
+h1[4]
+</th>
+<th style="text-align:right;">
+h1[5]
+</th>
+<th style="text-align:right;">
+h1[6]
+</th>
+<th style="text-align:right;">
+h1[7]
+</th>
+<th style="text-align:right;">
+h1[8]
+</th>
+<th style="text-align:right;">
+h1[9]
+</th>
+<th style="text-align:right;">
+h1[10]
+</th>
+<th style="text-align:right;">
+h1[11]
+</th>
+<th style="text-align:right;">
+h1[12]
+</th>
+<th style="text-align:right;">
+h1[13]
+</th>
+<th style="text-align:right;">
+h1[14]
+</th>
+<th style="text-align:right;">
+h1[15]
+</th>
+<th style="text-align:right;">
+h1[16]
+</th>
+<th style="text-align:right;">
+bias
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+h2[1]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[2]
+</td>
+<td style="text-align:right;">
+-0.2987
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.0319
+</td>
+<td style="text-align:right;">
+0.8693
+</td>
+<td style="text-align:right;">
+-0.1851
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+0.0696
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+-0.7627
+</td>
+<td style="text-align:right;">
+-0.0094
+</td>
+<td style="text-align:right;">
+-0.2311
+</td>
+<td style="text-align:right;">
+-0.2093
+</td>
+<td style="text-align:right;">
+0.6654
+</td>
+<td style="text-align:right;">
+-0.9144
+</td>
+<td style="text-align:right;">
+0.4639
+</td>
+<td style="text-align:right;">
+-0.5902
+</td>
+<td style="text-align:right;">
+0.0332
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[3]
+</td>
+<td style="text-align:right;">
+-0.2249
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.2219
+</td>
+<td style="text-align:right;">
+0.8670
+</td>
+<td style="text-align:right;">
+-0.2593
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+0.1387
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+-0.7658
+</td>
+<td style="text-align:right;">
+-0.0072
+</td>
+<td style="text-align:right;">
+-0.2375
+</td>
+<td style="text-align:right;">
+-0.0307
+</td>
+<td style="text-align:right;">
+0.7603
+</td>
+<td style="text-align:right;">
+-1.3997
+</td>
+<td style="text-align:right;">
+0.5377
+</td>
+<td style="text-align:right;">
+-0.8632
+</td>
+<td style="text-align:right;">
+0.0046
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[4]
+</td>
+<td style="text-align:right;">
+-0.4834
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.1991
+</td>
+<td style="text-align:right;">
+0.9321
+</td>
+<td style="text-align:right;">
+-0.1498
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+0.2036
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+-0.7517
+</td>
+<td style="text-align:right;">
+-0.0145
+</td>
+<td style="text-align:right;">
+-0.2194
+</td>
+<td style="text-align:right;">
+-0.2116
+</td>
+<td style="text-align:right;">
+0.8227
+</td>
+<td style="text-align:right;">
+-0.7243
+</td>
+<td style="text-align:right;">
+0.5505
+</td>
+<td style="text-align:right;">
+-0.5419
+</td>
+<td style="text-align:right;">
+0.0319
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[5]
+</td>
+<td style="text-align:right;">
+0.2081
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+-0.0567
+</td>
+<td style="text-align:right;">
+-0.3680
+</td>
+<td style="text-align:right;">
+0.0880
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+-0.1175
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.5557
+</td>
+<td style="text-align:right;">
+0.0104
+</td>
+<td style="text-align:right;">
+1.0575
+</td>
+<td style="text-align:right;">
+0.5404
+</td>
+<td style="text-align:right;">
+-0.5445
+</td>
+<td style="text-align:right;">
+0.8675
+</td>
+<td style="text-align:right;">
+-0.3609
+</td>
+<td style="text-align:right;">
+0.4751
+</td>
+<td style="text-align:right;">
+0.0716
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[6]
+</td>
+<td style="text-align:right;">
+0.0595
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.1858
+</td>
+<td style="text-align:right;">
+-0.5919
+</td>
+<td style="text-align:right;">
+-0.1327
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+-0.3622
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.4803
+</td>
+<td style="text-align:right;">
+-0.0026
+</td>
+<td style="text-align:right;">
+1.0511
+</td>
+<td style="text-align:right;">
+0.0184
+</td>
+<td style="text-align:right;">
+-0.8356
+</td>
+<td style="text-align:right;">
+0.7231
+</td>
+<td style="text-align:right;">
+-0.6411
+</td>
+<td style="text-align:right;">
+0.3938
+</td>
+<td style="text-align:right;">
+0.0562
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[7]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0e+00
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[8]
+</td>
+<td style="text-align:right;">
+-0.2536
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+-0.0396
+</td>
+<td style="text-align:right;">
+-0.7080
+</td>
+<td style="text-align:right;">
+-0.5823
+</td>
+<td style="text-align:right;">
+-1e-04
+</td>
+<td style="text-align:right;">
+-0.6416
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.3876
+</td>
+<td style="text-align:right;">
+0.0035
+</td>
+<td style="text-align:right;">
+0.9782
+</td>
+<td style="text-align:right;">
+-0.1837
+</td>
+<td style="text-align:right;">
+-0.9018
+</td>
+<td style="text-align:right;">
+0.5593
+</td>
+<td style="text-align:right;">
+-0.8446
+</td>
+<td style="text-align:right;">
+0.2836
+</td>
+<td style="text-align:right;">
+0.1058
+</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Layer 3 weights</strong> w3 (1 × 8) and bias b3 = -0.0406
+:</p>
+<table class="table table-striped table-condensed" style="font-size: 10px; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Hidden node h2
+</th>
+<th style="text-align:right;">
+Output weight
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+h2[1]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[2]
+</td>
+<td style="text-align:right;">
+0.8404
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[3]
+</td>
+<td style="text-align:right;">
+0.8076
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[4]
+</td>
+<td style="text-align:right;">
+0.6953
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[5]
+</td>
+<td style="text-align:right;">
+-0.7628
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[6]
+</td>
+<td style="text-align:right;">
+-0.9380
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[7]
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+h2[8]
+</td>
+<td style="text-align:right;">
+-0.9924
+</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Linearised sensitivity</strong> (gradient at mean band
+values):</p>
+<table class="table table-striped table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Band
+</th>
+<th style="text-align:right;">
+dVI/dBand (at mean)
+</th>
+<th style="text-align:right;">
+|Sensitivity|
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+red_edge
+</td>
+<td style="text-align:right;">
+-5.4340
+</td>
+<td style="text-align:right;">
+5.4340
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+red
+</td>
+<td style="text-align:right;">
+2.4363
+</td>
+<td style="text-align:right;">
+2.4363
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+blue
+</td>
+<td style="text-align:right;">
+2.1791
+</td>
+<td style="text-align:right;">
+2.1791
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+nir
+</td>
+<td style="text-align:right;">
+1.7117
+</td>
+<td style="text-align:right;">
+1.7117
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+green
+</td>
+<td style="text-align:right;">
+1.4883
+</td>
+<td style="text-align:right;">
+1.4883
+</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Approximate linear formula</strong> (linearised around band
+means):</p>
+<p><span class="math display">\[\text{SynVI}_{yield_kgha} \approx 0.0000
+-5.4340 × red_edge +2.4363 × red +2.1791 × blue +
+\text{const}\]</span></p>
+</div>
+</div>
+<div id="comparison-synthetic-vi-vs.-standard-vis"
+class="section level1" number="13">
+<h1><span class="header-section-number">13</span> Comparison: Synthetic
+VI vs. Standard VIs</h1>
+<p>For each standard VI and trait the same LOGO scheme is used (train on
+4 groups, test on 5th) with a simple linear regression baseline.</p>
+<pre class="r"><code># LOGO linear regression benchmark for each standard VI × trait
+linreg_logo_cv &lt;- function(data, vi, trait) {
+  map_dfr(group_levels_all, function(held_out) {
+    tr &lt;- data %&gt;% filter(group != held_out,
+                          !is.na(.data[[vi]]), !is.na(.data[[trait]]))
+    te &lt;- data %&gt;% filter(group == held_out,
+                          !is.na(.data[[vi]]), !is.na(.data[[trait]]))
+    if (nrow(tr) &lt; 10 || nrow(te) &lt; 2) return(NULL)
+    fit  &lt;- lm(as.formula(paste(trait, &quot;~&quot;, vi)), data = tr)
+    pred &lt;- predict(fit, newdata = te)
+    tibble(held_out = held_out,
+           r = cor(pred, te[[trait]], use = &quot;complete.obs&quot;))
+  }) %&gt;%
+  summarise(mean_r = mean(r, na.rm = TRUE)) %&gt;%
+  pull(mean_r)
+}
+
+if (length(vi_cols) &gt; 0) {
+  cat(&quot;Computing standard VI baselines for&quot;, length(vi_cols), &quot;VIs ×&quot;,
+      length(usable_traits), &quot;traits ...\n&quot;)
+  std_vi_results &lt;- expand_grid(vi = vi_cols, trait = usable_traits) %&gt;%
+    mutate(mean_r = map2_dbl(vi, trait,
+                             ~linreg_logo_cv(model_data, .x, .y)))
+
+  best_std_vi &lt;- std_vi_results %&gt;%
+    group_by(trait) %&gt;%
+    slice_max(mean_r, n = 1, with_ties = FALSE) %&gt;%
+    ungroup() %&gt;%
+    rename(best_vi = vi, std_r = mean_r)
+
+  comparison &lt;- loeo_summary %&gt;%
+    select(trait, syn_r = mean_r) %&gt;%
+    left_join(best_std_vi, by = &quot;trait&quot;) %&gt;%
+    mutate(improvement = syn_r - std_r)
+
+  comparison %&gt;%
+    arrange(desc(improvement)) %&gt;%
+    kable(digits = 3,
+          col.names = c(&quot;Trait&quot;,&quot;DNN Synthetic VI r&quot;,&quot;Best std VI&quot;,&quot;Std VI r&quot;,&quot;Δr&quot;),
+          caption = &quot;DNN Synthetic VI vs. best standard VI (LOEO mean Pearson r)&quot;) %&gt;%
+    kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                  full_width = FALSE) %&gt;%
+    column_spec(5,
+                bold  = TRUE,
+                color = ifelse(comparison$improvement &gt; 0, &quot;green&quot;, &quot;red&quot;))
+}</code></pre>
+<pre><code>Computing standard VI baselines for 10 VIs × 1 traits ...</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+DNN Synthetic VI vs. best standard VI (LOEO mean Pearson r)
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+DNN Synthetic VI r
+</th>
+<th style="text-align:left;">
+Best std VI
+</th>
+<th style="text-align:right;">
+Std VI r
+</th>
+<th style="text-align:right;">
+Δr
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.496
+</td>
+<td style="text-align:left;">
+EVI
+</td>
+<td style="text-align:right;">
+0.598
+</td>
+<td style="text-align:right;font-weight: bold;color: red !important;">
+-0.102
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>if (length(vi_cols) &gt; 0 &amp;&amp; exists(&quot;comparison&quot;)) {
+  comparison %&gt;%
+    pivot_longer(c(syn_r, std_r),
+                 names_to = &quot;type&quot;, values_to = &quot;r&quot;) %&gt;%
+    mutate(type = recode(type, syn_r = &quot;Synthetic VI (DNN)&quot;,
+                               std_r = &quot;Best standard VI (linear)&quot;),
+           trait = reorder(trait, ifelse(type == &quot;Synthetic VI (DNN)&quot;, r, NA),
+                           mean, na.rm = TRUE)) %&gt;%
+    ggplot(aes(x = r, y = trait, colour = type, shape = type)) +
+    geom_vline(xintercept = 0, linetype = &quot;dashed&quot;, colour = &quot;grey50&quot;) +
+    geom_point(size = 4, alpha = 0.9) +
+    geom_line(aes(group = trait), colour = &quot;grey60&quot;, linewidth = 0.5) +
+    scale_colour_manual(values = c(&quot;Synthetic VI (DNN)&quot;    = &quot;#e34a33&quot;,
+                                   &quot;Best standard VI (linear)&quot; = &quot;#3182bd&quot;)) +
+    labs(x = &quot;Mean LOEO r&quot;, y = NULL,
+         title  = &quot;Prediction accuracy: DNN Synthetic VI vs. Standard VIs (LOEO)&quot;,
+         colour = NULL, shape = NULL) +
+    theme_bw(base_size = 13) +
+    theme(legend.position = &quot;bottom&quot;)
+}</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/comparison-plot-1.png" alt="Prediction accuracy: Synthetic VI vs. best standard VI" width="960" />
+<p class="caption">
+Prediction accuracy: Synthetic VI vs. best standard VI
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-comparison-plot-1">
+Past versions of comparison-plot-1.png
+</button>
+</p>
+<div id="fig-comparison-plot-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/comparison-plot-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/comparison-plot-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/comparison-plot-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="synthetic-vi-correlations-with-standard-vis"
+class="section level1" number="14">
+<h1><span class="header-section-number">14</span> Synthetic VI
+Correlations with Standard VIs</h1>
+<pre class="r"><code>if (length(vi_cols) &gt; 0 &amp;&amp; nrow(synvi_rows) &gt; 0) {
+  # Join synthetic VI values back to model_data for standard VI columns
+  synvi_wide &lt;- synvi_rows %&gt;%
+    select(Env, Timepoint, group, trait, SynVI) %&gt;%
+    pivot_wider(names_from = trait, values_from = SynVI,
+                names_prefix = &quot;SynVI_&quot;,
+                values_fn = mean)   # average if &gt;1 row per cell
+
+  stdvi_sub &lt;- model_data %&gt;%
+    select(Env, Timepoint, group, all_of(vi_cols)) %&gt;%
+    group_by(Env, Timepoint, group) %&gt;%
+    summarise(across(all_of(vi_cols), mean, na.rm = TRUE), .groups = &quot;drop&quot;)
+
+  joined &lt;- left_join(synvi_wide, stdvi_sub, by = c(&quot;Env&quot;,&quot;Timepoint&quot;,&quot;group&quot;))
+
+  synvi_trait_cols &lt;- names(joined)[startsWith(names(joined), &quot;SynVI_&quot;)]
+  if (length(synvi_trait_cols) &gt; 0 &amp;&amp; length(vi_cols) &gt; 0) {
+    cor_mat  &lt;- cor(joined[, c(vi_cols, synvi_trait_cols)],
+                    use = &quot;pairwise.complete.obs&quot;)
+    sub_cor  &lt;- cor_mat[vi_cols, synvi_trait_cols, drop = FALSE]
+    colnames(sub_cor) &lt;- str_remove(colnames(sub_cor), &quot;SynVI_&quot;)
+    corrplot(sub_cor, method = &quot;color&quot;,
+             col  = colorRampPalette(c(&quot;#2166AC&quot;,&quot;white&quot;,&quot;#B2182B&quot;))(200),
+             tl.cex = 0.8, cl.cex = 0.7,
+             addCoef.col = &quot;black&quot;, number.cex = 0.65,
+             title = &quot;r(Standard VI, Synthetic VI)&quot;, mar = c(0,0,2,0))
+  }
+}</code></pre>
+<div class="figure" style="text-align: center">
+<img src="figure/13.DNN_Synthetic_VI.Rmd/synvi-stdvi-corr-1.png" alt="Correlation between Synthetic VIs (per-trait) and standard VIs" width="960" />
+<p class="caption">
+Correlation between Synthetic VIs (per-trait) and standard VIs
+</p>
+</div>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-synvi-stdvi-corr-1">
+Past versions of synvi-stdvi-corr-1.png
+</button>
+</p>
+<div id="fig-synvi-stdvi-corr-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/9dd9bccd11e38ad5a4d9961f7b82cf2b0ebff775/docs/figure/13.DNN_Synthetic_VI.Rmd/synvi-stdvi-corr-1.png" target="_blank">9dd9bcc</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/d7c4d6dfc7f54df0b1c9272a1172765766a313e9/docs/figure/13.DNN_Synthetic_VI.Rmd/synvi-stdvi-corr-1.png" target="_blank">d7c4d6d</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-15
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/1edea2618cb3add0121a058da053dd46040e92e8/docs/figure/13.DNN_Synthetic_VI.Rmd/synvi-stdvi-corr-1.png" target="_blank">1edea26</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/sss9010/NY_WMBCL/blob/06f136519a2731fed867ad5c27a0e2d3ed0f629b/docs/figure/13.DNN_Synthetic_VI.Rmd/synvi-stdvi-corr-1.png" target="_blank">06f1365</a>
+</td>
+<td>
+sss9010
+</td>
+<td>
+2026-05-14
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="summary" class="section level1" number="15">
+<h1><span class="header-section-number">15</span> Summary</h1>
+<pre class="r"><code>final_summary &lt;- loeo_summary %&gt;%
+  left_join(
+    wenv_summary %&gt;% select(trait, wenv_r = mean_r),
+    by = &quot;trait&quot;
+  ) %&gt;%
+  left_join(
+    sensitivity_list %&gt;%
+      group_by(trait) %&gt;%
+      slice_max(importance, n = 1, with_ties = FALSE) %&gt;%
+      select(trait, top_band = band),
+    by = &quot;trait&quot;
+  ) %&gt;%
+  arrange(desc(mean_r))
+
+final_summary %&gt;%
+  kable(digits = 3,
+        col.names = c(&quot;Trait&quot;,&quot;LOEO r&quot;,&quot;SD r&quot;,&quot;LOEO RMSE&quot;,&quot;N folds&quot;,
+                      &quot;Within-env r&quot;,&quot;Top band&quot;),
+        caption = &quot;Summary: DNN Synthetic VI – LOEO and within-environment CV accuracy with dominant spectral band&quot;) %&gt;%
+  kable_styling(bootstrap_options = c(&quot;striped&quot;,&quot;hover&quot;,&quot;condensed&quot;),
+                full_width = FALSE)</code></pre>
+<table class="table table-striped table-hover table-condensed" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Summary: DNN Synthetic VI – LOEO and within-environment CV accuracy with
+dominant spectral band
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Trait
+</th>
+<th style="text-align:right;">
+LOEO r
+</th>
+<th style="text-align:right;">
+SD r
+</th>
+<th style="text-align:right;">
+LOEO RMSE
+</th>
+<th style="text-align:right;">
+N folds
+</th>
+<th style="text-align:right;">
+Within-env r
+</th>
+<th style="text-align:left;">
+Top band
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+yield_kgha
+</td>
+<td style="text-align:right;">
+0.496
+</td>
+<td style="text-align:right;">
+0.321
+</td>
+<td style="text-align:right;">
+1016.261
+</td>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:right;">
+0.712
+</td>
+<td style="text-align:left;">
+red_edge
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.4.2 (2024-10-31 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 22621)
+
+Matrix products: default
+
+
+locale:
+[1] LC_COLLATE=Estonian_Estonia.utf8  LC_CTYPE=Estonian_Estonia.utf8   
+[3] LC_MONETARY=Estonian_Estonia.utf8 LC_NUMERIC=C                     
+[5] LC_TIME=Estonian_Estonia.utf8    
+
+time zone: America/New_York
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] torch_0.17.0     kableExtra_1.4.0 knitr_1.50       corrplot_0.95   
+ [5] patchwork_1.3.2  lubridate_1.9.5  forcats_1.0.1    stringr_1.6.0   
+ [9] dplyr_1.1.4      purrr_1.0.2      readr_2.1.5      tidyr_1.3.1     
+[13] tibble_3.2.1     ggplot2_4.0.1    tidyverse_2.0.0  workflowr_1.7.2 
+
+loaded via a namespace (and not attached):
+ [1] gtable_0.3.6       xfun_0.53          bslib_0.10.0       processx_3.8.6    
+ [5] lattice_0.22-6     callr_3.7.6        tzdb_0.4.0         vctrs_0.6.5       
+ [9] tools_4.4.2        ps_1.9.1           generics_0.1.4     pkgconfig_2.0.3   
+[13] Matrix_1.7-3       RColorBrewer_1.1-3 S7_0.2.1           lifecycle_1.0.5   
+[17] compiler_4.4.2     farver_2.1.2       git2r_0.36.2       textshaping_1.0.5 
+[21] codetools_0.2-20   getPass_0.2-4      httpuv_1.6.16      htmltools_0.5.8.1 
+[25] sass_0.4.10        yaml_2.3.10        later_1.4.4        pillar_1.11.1     
+[29] jquerylib_0.1.4    whisker_0.4.1      cachem_1.1.0       nlme_3.1-166      
+[33] tidyselect_1.2.1   digest_0.6.37      stringi_1.8.4      splines_4.4.2     
+[37] labeling_0.4.3     rprojroot_2.1.1    fastmap_1.2.0      grid_4.4.2        
+[41] cli_3.6.3          magrittr_2.0.3     utf8_1.2.6         withr_3.0.2       
+[45] scales_1.4.0       promises_1.5.0     bit64_4.6.0-1      timechange_0.4.0  
+[49] rmarkdown_2.31     httr_1.4.7         bit_4.6.0          otel_0.2.0        
+[53] hms_1.1.4          evaluate_1.0.5     viridisLite_0.4.3  mgcv_1.9-4        
+[57] rlang_1.2.0        Rcpp_1.1.0         glue_1.8.0         xml2_1.5.1        
+[61] coro_1.1.0         svglite_2.2.2      rstudioapi_0.18.0  jsonlite_2.0.0    
+[65] R6_2.6.1           systemfonts_1.3.2  fs_1.6.6          </code></pre>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>
+Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.4.2 (2024-10-31 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 22621)
+
+Matrix products: default
+
+
+locale:
+[1] LC_COLLATE=Estonian_Estonia.utf8  LC_CTYPE=Estonian_Estonia.utf8   
+[3] LC_MONETARY=Estonian_Estonia.utf8 LC_NUMERIC=C                     
+[5] LC_TIME=Estonian_Estonia.utf8    
+
+time zone: America/New_York
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] torch_0.17.0     kableExtra_1.4.0 knitr_1.50       corrplot_0.95   
+ [5] patchwork_1.3.2  lubridate_1.9.5  forcats_1.0.1    stringr_1.6.0   
+ [9] dplyr_1.1.4      purrr_1.0.2      readr_2.1.5      tidyr_1.3.1     
+[13] tibble_3.2.1     ggplot2_4.0.1    tidyverse_2.0.0  workflowr_1.7.2 
+
+loaded via a namespace (and not attached):
+ [1] gtable_0.3.6       xfun_0.53          bslib_0.10.0       processx_3.8.6    
+ [5] lattice_0.22-6     callr_3.7.6        tzdb_0.4.0         vctrs_0.6.5       
+ [9] tools_4.4.2        ps_1.9.1           generics_0.1.4     pkgconfig_2.0.3   
+[13] Matrix_1.7-3       RColorBrewer_1.1-3 S7_0.2.1           lifecycle_1.0.5   
+[17] compiler_4.4.2     farver_2.1.2       git2r_0.36.2       textshaping_1.0.5 
+[21] codetools_0.2-20   getPass_0.2-4      httpuv_1.6.16      htmltools_0.5.8.1 
+[25] sass_0.4.10        yaml_2.3.10        later_1.4.4        pillar_1.11.1     
+[29] jquerylib_0.1.4    whisker_0.4.1      cachem_1.1.0       nlme_3.1-166      
+[33] tidyselect_1.2.1   digest_0.6.37      stringi_1.8.4      splines_4.4.2     
+[37] labeling_0.4.3     rprojroot_2.1.1    fastmap_1.2.0      grid_4.4.2        
+[41] cli_3.6.3          magrittr_2.0.3     utf8_1.2.6         withr_3.0.2       
+[45] scales_1.4.0       promises_1.5.0     bit64_4.6.0-1      timechange_0.4.0  
+[49] rmarkdown_2.31     httr_1.4.7         bit_4.6.0          otel_0.2.0        
+[53] hms_1.1.4          evaluate_1.0.5     viridisLite_0.4.3  mgcv_1.9-4        
+[57] rlang_1.2.0        Rcpp_1.1.0         glue_1.8.0         xml2_1.5.1        
+[61] coro_1.1.0         svglite_2.2.2      rstudioapi_0.18.0  jsonlite_2.0.0    
+[65] R6_2.6.1           systemfonts_1.3.2  fs_1.6.6          </code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+https://docs.mathjax.org/en/latest/web/configuration.html. This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeCodeFolding("hide" === "show");
+});
+</script>
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

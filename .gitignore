@@ -1,0 +1,19 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# knitr cache (committed intentionally — delete to force re-run)
+# analysis/DNN_Synthetic_VI_cache/   # uncomment to ignore cache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rendered outputs (committed intentionally)
+# docs/
+
+# Temp / log files
+*.log
+build_*.log
