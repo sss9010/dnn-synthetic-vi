@@ -11,8 +11,7 @@ A deep neural network with a **spectral bottleneck architecture** learns a data-
 
 ---
 
-## The idea
-
+TLDR: 
 Standard vegetation indices (NDVI, NDRE, …) use fixed, hand-crafted band ratios.
 This analysis asks: **what if the network learns the optimal band combination instead?**
 
@@ -113,9 +112,6 @@ dnn_synthetic_vi/
 **Five Env × Timepoint groups** are used — one optimal flight per trial year:
 `HELF24_TP7`, `KET21_TP4`, `MCG23_TP5`, `MCG25_TP12`, `SNY22_TP6`
 
-> MCG25 (TP12) is a **late-season flight** with an inverted spectral–yield
-> relationship; it is excluded from all model training. See the MCG25 Diagnostic
-> section in the report for details.
 
 ---
 
@@ -160,7 +156,7 @@ source("scripts/variance_partition.R") # eta² variance decomposition
 ## Citation
 
 ```
-Sepp, S. (2025). DNN-Derived Synthetic Vegetation Index for Phenotype Prediction.
+Sepp, S.S., Jannink, JL., Sorrells, M.E. (2025). DNN-Derived Synthetic Vegetation Index for Phenotype Prediction.
 GitHub. https://github.com/sss9010/dnn-synthetic-vi
 ```
 
@@ -178,5 +174,5 @@ prediction pipeline:
 
 ## Contact
 
-**Siim Sepp** — s11ms3pp@gmail.com  
-NY Winter Malting Barley Breeding Programme, Cornell University
+**Siim Sepp** — sss322@cornell.edu  
+
