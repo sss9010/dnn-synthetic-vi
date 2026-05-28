@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this code or methodology, please cite it as below."
+type: software
+title: "DNN-Derived Synthetic Vegetation Index for Phenotype Prediction"
+abstract: >
+  A deep neural network with a spectral bottleneck architecture learns a
+  data-optimised vegetation index from raw multispectral UAV bands for
+  agronomic trait prediction in winter barley. The single-neuron bottleneck
+  (Synthetic VI) mimics the structure of hand-crafted indices (e.g. NDVI)
+  while learning non-linear, trait-specific band combinations. Evaluated
+  under leave-one-environment-out and within-environment cross-validation,
+  with NDVI linear regression as a baseline and two transfer-learning
+  adaptation strategies.
+authors:
+  - family-names: Sepp
+    given-names: Siim
+    email: s11ms3pp@gmail.com
+    affiliation: Cornell University
+repository-code: "https://github.com/sss9010/dnn-synthetic-vi"
+url: "https://sss9010.github.io/dnn-synthetic-vi/"
+license: MIT
+version: "1.0.0"
+date-released: "2025-05-27"
+keywords:
+  - deep learning
+  - vegetation index
+  - remote sensing
+  - UAV
+  - plant breeding
+  - barley
+  - multispectral
+  - neural network
+  - cross-validation
+  - phenomics
