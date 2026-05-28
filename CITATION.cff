@@ -14,7 +14,13 @@ abstract: >
 authors:
   - family-names: Sepp
     given-names: Siim
-    email: s11ms3pp@gmail.com
+    email: sss322@cornell.edu
+    affiliation: Cornell University
+  - family-names: Jannink
+    given-names: Jean-Luc
+    affiliation: Cornell University
+  - family-names: Sorrells
+    given-names: Mark E.
     affiliation: Cornell University
 repository-code: "https://github.com/sss9010/dnn-synthetic-vi"
 url: "https://sss9010.github.io/dnn-synthetic-vi/"
