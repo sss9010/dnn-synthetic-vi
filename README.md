@@ -1,34 +1,44 @@
-# DNN-Derived Synthetic Vegetation Index for Phenotype Prediction
+# Comparing Spectral VI Derivation Approaches for Barley Yield Prediction
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Language: R](https://img.shields.io/badge/Language-R-276DC3.svg)](https://www.r-project.org/)
 [![Deep Learning: torch](https://img.shields.io/badge/Deep%20Learning-torch-EE4C2C.svg)](https://torch.mlverse.org/)
 [![GitHub Pages](https://img.shields.io/badge/Report-GitHub%20Pages-blue.svg)](https://sss9010.github.io/dnn-synthetic-vi/DNN_Synthetic_VI.html)
 
-A deep neural network with a **spectral bottleneck architecture** learns a data-optimised vegetation index directly from raw multispectral drone bands — replacing hand-crafted indices like NDVI with a trait-specific scalar that maximises predictive accuracy for agronomic and malt quality traits in winter barley.
+Three approaches for deriving spectral vegetation indices from UAV multispectral imagery are compared for predicting barley grain yield across five field environments — benchmarked under the same leave-one-environment-out (LOEO) and within-environment cross-validation designs.
 
 📄 **[Read the full rendered report](https://sss9010.github.io/dnn-synthetic-vi/DNN_Synthetic_VI.html)**
 
 ---
 
-TLDR: 
-Standard vegetation indices (NDVI, NDRE, …) use fixed, hand-crafted band ratios.
-This analysis asks: **what if the network learns the optimal band combination instead?**
+**TLDR:**
+Standard indices (NDVI, NDRE, …) use fixed, hand-crafted band ratios. This analysis
+asks: can learning the band combination from data improve cross-environment prediction?
 
-A DNN with a single-neuron bottleneck is trained end-to-end on five raw spectral
-bands (blue, green, red, red-edge, NIR) to predict a target trait. The bottleneck
-forces all spectral information through one scalar — the *Synthetic VI* — before
-the prediction head. That scalar is the learned index, and its formula is fully
-extractable from the encoder weights.
+Three approaches are evaluated using five raw spectral bands (blue, green, red,
+red-edge, NIR):
+
+1. **L-BFGS-optimised VI** — retains the interpretable normalised-ratio structure of
+   NDVI but learns band weights that directly maximise Pearson *r* with yield.
+2. **Symbolic regression** — LASSO polynomial SR and PySR search for compact
+   mathematical expressions without constraining the formula structure.
+3. **DNN bottleneck (Synthetic VI)** — a neural network with a single-neuron
+   bottleneck learns a non-linear, data-optimised index end-to-end.
+
+**Key finding:** L-BFGS-VI achieves the best LOEO generalisation, outperforming NDVI,
+both DNN variants, LASSO polynomial SR, and PySR. The DNN bottleneck overfits to
+training environments — the mean-embedding proxy for unseen environments is a weak
+substitute for a learned representation, and stronger regularisation would be needed
+to close that gap.
 
 ---
 
 ## Key Results
 
 <p align="center">
-  <img src="docs/figure/DNN_Synthetic_VI.Rmd/comparison-plot-1.png" width="700"
-       alt="DNN Synthetic VI vs best standard VI — LOEO mean Pearson r per trait"/>
-  <br><em>DNN Synthetic VI vs. best standard VI — leave-one-environment-out Pearson r</em>
+  <img src="docs/figure/DNN_Synthetic_VI.Rmd/all-model-loeo-plot-1.png" width="700"
+       alt="All-model LOEO mean Pearson r comparison"/>
+  <br><em>LOEO mean Pearson r — all models compared. L-BFGS-VI leads cross-environment generalisation.</em>
 </p>
 
 <p align="center">
@@ -38,30 +48,52 @@ extractable from the encoder weights.
 </p>
 
 <p align="center">
+  <img src="docs/figure/DNN_Synthetic_VI.Rmd/all-model-wenv-plot-1.png" width="700"
+       alt="All-model within-environment 5-fold CV Pearson r comparison"/>
+  <br><em>Within-environment 5-fold CV — all models. DNN approaches are competitive within environments.</em>
+</p>
+
+<p align="center">
   <img src="docs/figure/DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" width="600"
        alt="Gradient-based spectral band importance per trait"/>
-  <br><em>Gradient-based band importance — which spectral channels drive each Synthetic VI</em>
+  <br><em>Gradient-based band importance — which spectral channels drive the DNN Synthetic VI</em>
 </p>
 
 ---
 
-## DNN Architecture
+## Approaches
+
+### Approach 1 — L-BFGS Coefficient Optimisation
+
+The normalised-ratio structure of NDVI is preserved but all five bands enter
+both numerator and denominator with learnable weights, optimised by L-BFGS to
+directly maximise Pearson *r* on training data. Coefficients are initialised at
+the NDVI solution; OLS then calibrates the linear scale.
+
+### Approach 2 — Symbolic Regression
+
+- **LASSO polynomial SR** — degree-2 polynomial features (15 interaction terms)
+  with LASSO regularisation; fixed structure, learned coefficients.
+- **PySR** — evolutionary search over expression trees; discovers both formula
+  structure and coefficients without constraints (requires Python + PySR).
+
+### Approach 3 — DNN Bottleneck (Synthetic VI)
 
 ```
 Band Encoder      5 bands → FC(16) → ReLU → dropout
                                   → FC(8)  → ReLU → dropout
-                                  → FC(1)           ← Synthetic VI (no activation)
+                                  → FC(1)           ← Synthetic VI (linear)
                                        ↓
 Prediction Head   [SynVI ‖ env_embed(4)] → FC(8) → ReLU → FC(1) → trait
 ```
 
-- **Bottleneck** — a single linear output neuron forces all spectral information
-  through one scalar, mirroring the structure of NDVI while learning non-linear,
-  data-optimal band combinations.
-- **Environment embedding** — a learned 4-d vector per trial shifts the VI→trait
-  mapping for each environment, so the shared encoder generalises across sites.
-- **LOEO inference** — for unseen environments, the mean embedding of the four
-  training environments is used as a proxy (no fine-tuning required).
+- **Bottleneck** — single linear neuron forces all spectral information through
+  one scalar, mirroring NDVI structure while allowing non-linear band combinations.
+- **Environment embedding** — learned 4-d vector per trial shifts the VI→trait
+  mapping so the shared encoder can generalise across sites.
+- **Full DNN** variant (no bottleneck) serves as an upper-bound reference.
+- **LOEO inference** — mean embedding of the four training environments is used
+  as a proxy for unseen environments; no fine-tuning required.
 
 ---
 
@@ -121,9 +153,10 @@ dnn_synthetic_vi/
 install.packages(c(
   "tidyverse", "ggplot2", "patchwork",
   "corrplot", "knitr", "kableExtra",
-  "torch"
+  "torch", "glmnet", "reticulate"
 ))
-torch::install_torch()   # one-time LibTorch download (~0.5 GB)
+torch::install_torch()          # one-time LibTorch download (~0.5 GB)
+# reticulate::py_install("pysr") # optional — needed for PySR only
 ```
 
 ---
@@ -138,17 +171,19 @@ rmarkdown::render("analysis/DNN_Synthetic_VI.Rmd",
                   output_file = "DNN_Synthetic_VI.html")
 ```
 
-The knitr cache skips the two heavy training chunks (`run-training`,
-`run-adaptation-cv`) if the code is unchanged. Delete
-`analysis/DNN_Synthetic_VI_cache/` to force a full re-run.
+The knitr cache skips heavy training chunks (`run-training`, `run-adaptation-cv`,
+`run-fulldnn-training`, `run-lasso-sr`, `run-lbfgs`) if code is unchanged.
+Delete `analysis/DNN_Synthetic_VI_cache/` to force a full re-run (~hours on CPU).
 
 ---
 
 ## Helper Scripts
 
 ```r
-source("scripts/ndvi_corr.R")          # NDVI–yield Pearson r per environment
-source("scripts/variance_partition.R") # eta² variance decomposition
+source("scripts/ndvi_corr.R")               # NDVI–yield Pearson r per environment
+source("scripts/variance_partition.R")      # eta² variance decomposition
+source("analysis/extract_results.R")        # load and print results from knitr cache
+source("analysis/quick_model_comparison.R") # fast LOEO preview (150 epochs, 1 rep)
 ```
 
 ---
@@ -156,7 +191,7 @@ source("scripts/variance_partition.R") # eta² variance decomposition
 ## Citation
 
 ```
-Sepp, S.S., Jannink, JL., Sorrells, M.E. (2025). DNN-Derived Synthetic Vegetation Index for Phenotype Prediction.
+Sepp, S.S., Jannink, JL., Sorrells, M.E. (2025). Comparing Spectral VI Derivation Approaches for Barley Yield Prediction.
 GitHub. https://github.com/sss9010/dnn-synthetic-vi
 ```
 
