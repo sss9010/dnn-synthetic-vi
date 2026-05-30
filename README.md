@@ -28,7 +28,7 @@ red-edge, NIR):
 **Key finding:** L-BFGS-VI achieves the best LOEO generalisation, outperforming NDVI,
 both DNN variants, LASSO polynomial SR, and PySR. The DNN bottleneck overfits to
 training environments — the mean-embedding proxy for unseen environments is a weak
-substitute for a learned representation, and stronger regularisation would be needed
+substitute for a learned representation, and stronger regularization with bigger datasets would be needed
 to close that gap.
 
 ---
