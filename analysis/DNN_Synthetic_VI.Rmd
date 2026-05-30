@@ -1,5 +1,5 @@
 ﻿---
-title: "DNN-Derived Synthetic Vegetation Index for Phenotype Prediction"
+title: "Comparing Spectral VI Derivation Approaches for Barley Yield Prediction"
 author: "Siim Sepp"
 date: "`r Sys.time()`"
 output:
@@ -25,63 +25,87 @@ knitr::opts_chunk$set(
 
 # Overview
 
-This script uses a deep neural network (DNN) to derive **data-driven vegetation
-indices** from raw multispectral drone imagery for the NY Winter Malting Barley
-breeding programme.
+This study compares **three approaches** for deriving spectral vegetation
+indices from drone multispectral imagery to predict barley grain yield across
+five field environments. All three approaches are evaluated under the same
+cross-validation designs, using raw reflectance from five bands (blue, green,
+red, red_edge, nir).
 
-## What it does
+## Approach 1: L-BFGS Coefficient Optimisation
 
-Standard vegetation indices (NDVI, NDRE, etc.) are fixed, hand-crafted
-combinations of spectral bands designed for generic vegetation monitoring. Here,
-we instead **let the data determine the optimal band combination** for each
-agronomic or malt-quality trait. The result is a trait-specific **Synthetic VI**
-— a scalar value computed from the five raw bands (blue, green, red, red_edge,
-nir) that maximises predictive accuracy for that trait.
+The standard **NDVI formula** `(NIR − RED) / (NIR + RED)` uses fixed, equal
+coefficients. Here, the normalised-ratio structure is retained but the band
+coefficients are **optimised by L-BFGS** to maximise the Pearson correlation
+between the derived index and the training-set yield measurements. All five
+bands enter both numerator and denominator with learnable weights:
 
-A separate model is trained for each phenotype trait, yielding a distinct
-Synthetic VI per trait. After model training, the learned encoder weights are
-extracted and presented as an explicit mathematical formula so the index can be
-computed directly from band reflectances without re-running the DNN.
+$$\text{VI}_{\text{LBFGS}} = \frac{\mathbf{w}_{\text{num}}^\top \mathbf{x}}{\exp(\mathbf{w}_{\text{den}})^\top \mathbf{x} + \varepsilon}$$
 
-## Modelling approach
+where $\mathbf{w}_{\text{num}} \in \mathbb{R}^5$ is unrestricted (allowing
+negative "band contrast" analogous to the NIR − RED structure of NDVI) and
+$\exp(\mathbf{w}_{\text{den}}) > 0$ (positive denominator enforced via
+exp-reparameterisation). Coefficients are initialised at the NDVI solution
+and refined by L-BFGS. A simple OLS then calibrates the linear scale.
 
-The DNN has a **bottleneck architecture** with two components:
+## Approach 2: Symbolic Regression
 
-1. **Band Encoder** (5 → 16 → 8 → 1): three fully-connected layers with ReLU
-   activations compress the five bands into a single scalar — the Synthetic VI.
-   The final layer has no activation, so the index spans the full real line.
+Symbolic regression searches the space of **mathematical expressions** to find
+both the optimal formula structure *and* the optimal band coefficients
+simultaneously. Two implementations are compared:
 
-2. **Prediction Head** (1 → 8 → 1): maps the Synthetic VI through one hidden
-   layer to the trait value.
+- **LASSO polynomial SR** — degree-2 polynomial features (linear + squared +
+  pairwise interactions, 20 terms) with LASSO regularisation selecting a sparse
+  predictive subset. Fixed polynomial structure, optimised coefficients.
+- **PySR** — evolutionary search over expression trees with operators
+  `+, −, ×, /` and functions `√, x²`. Discovers both structure and coefficients
+  without constraints on formula form (requires Python + PySR).
 
-The bottleneck forces all spectral information through a single neuron before
-prediction, mimicking the structure of hand-crafted indices (e.g. NDVI uses a
-single derived value) while allowing non-linear, data-optimised band combinations.
-Only five specific Timepoint × Environment groups are used, one per trial year,
-representing the flight timing judged most informative per environment:
+## Approach 3: Supervised Neural Network with Feature Extraction
+
+A deep neural network (DNN) with a **bottleneck architecture** learns a
+data-driven vegetation index end-to-end:
+
+1. **Band Encoder** (5 → 16 → 8 → 1): fully-connected layers with ReLU
+   activations compress the five bands into a single scalar — the *Synthetic VI*.
+   The final layer is linear so the index spans the full real line.
+2. **Prediction Head** (1 + env_embed → 8 → 1): maps the Synthetic VI,
+   combined with a learned environment embedding, to the trait prediction.
+
+The single-neuron bottleneck forces all spectral information through one scalar,
+mimicking the structure of hand-crafted indices while allowing non-linear,
+data-optimised band combinations. A **Full DNN** variant (no bottleneck) serves
+as an upper-bound reference. The DNN is expected to achieve the highest
+prediction accuracy among the three approaches, at the cost of interpretability.
+
+## Data
+
+Five Timepoint × Environment groups are used, one per trial year, representing
+the flight timing judged most informative per environment:
 `HELF24_TP7`, `KET21_TP4`, `MCG23_TP5`, `MCG25_TP12`, `SNY22_TP6`.
 
-## Cross-validation
+Before modelling, observations with NDVI outside **mean ± 1.96 SD** within each
+environment are removed. MCG25_TP12 is a late-season flight with an inverted
+spectral–yield relationship (see MCG25 Diagnostic); it is retained to assess
+how each method handles this challenging environment.
 
-Two complementary CV scenarios are implemented. In both, splits are by **GID**
-(genotype ID) to prevent data leakage, and scalers are fit on training data only
-then applied to test folds.
+## Cross-Validation
+
+Two complementary CV scenarios are implemented for all three approaches. In
+both, splits are by **GID** (genotype ID) to prevent data leakage, and scalers
+are fit on training data only then applied to test folds.
 
 ### Leave-One-Environment-Out (LOEO)
 
 All observations from one environment are withheld; the model trains on the
 remaining four. This measures **cross-environment generalisation**.
 
-MCG25 is excluded from all analyses (see MCG25 Diagnostic section) because its
-late-season flight (TP12) produces an inverted spectral–yield relationship
-incompatible with the other four environments.
-
 | Fold | Training environments | Validation environment |
 |------|-----------------------|------------------------|
-| 1 | KET21, MCG23, SNY22 | HELF24 |
-| 2 | HELF24, MCG23, SNY22 | KET21 |
-| 3 | HELF24, KET21, SNY22 | MCG23 |
-| 4 | HELF24, KET21, MCG23 | SNY22 |
+| 1 | KET21, MCG23, MCG25, SNY22 | HELF24 |
+| 2 | HELF24, MCG23, MCG25, SNY22 | KET21 |
+| 3 | HELF24, KET21, MCG25, SNY22 | MCG23 |
+| 4 | HELF24, KET21, MCG23, SNY22 | MCG25 |
+| 5 | HELF24, KET21, MCG23, MCG25 | SNY22 |
 
 ### Within-Environment 5-Fold CV (by GID)
 
@@ -90,8 +114,7 @@ trains on 4/5 of GIDs and predicts the remaining 1/5. This measures
 **within-environment predictive ability** for unseen genotypes.
 
 Each scenario is repeated 3 times with different random seeds. Performance is
-Pearson *r* and RMSE on the back-transformed trait scale, benchmarked against
-linear regression on standard VIs under the same schemes.
+Pearson *r* and RMSE on the back-transformed trait scale.
 
 ```{r libraries}
 # ── Core data wrangling & visualisation ────────────────────────────────────
@@ -111,6 +134,12 @@ library(torch)
 if (!torch::torch_is_installed()) torch::install_torch()
 set.seed(42)
 torch_manual_seed(42)
+
+# ── Symbolic regression dependencies ───────────────────────────────────────
+if (!requireNamespace("glmnet",     quietly = TRUE)) install.packages("glmnet")
+library(glmnet)
+if (!requireNamespace("reticulate", quietly = TRUE)) install.packages("reticulate")
+library(reticulate)
 ```
 
 # Data Loading and Exploration
@@ -281,13 +310,30 @@ if (all(c("red", "nir") %in% names(model_data))) {
 # ── Save truly raw copy with all 5 environments (used in MCG25 diagnostic) ─
 model_data_raw_orig <- model_data
 
-# ── Exclude MCG25: TP12 is a late-season flight with inverted spectral-yield
-#    relationship (see MCG25 Diagnostic section). All model training uses
-#    the remaining 4 environments only.
-model_data <- model_data %>% filter(Env != "MCG25")
-cat("MCG25 excluded. Remaining environments:",
-    paste(sort(unique(as.character(model_data$Env))), collapse = ", "), "\n")
-cat("Remaining rows:", nrow(model_data), "\n")
+# ── Per-environment NDVI outlier removal (mean ± 1.96 SD) ─────────────────
+# Removes observations where NDVI_raw falls outside mean ± 1.96 SD within
+# each environment. Applied after saving model_data_raw_orig so MCG25
+# diagnostic plots retain the full pre-filter distribution.
+if ("NDVI_raw" %in% names(model_data)) {
+  n_before <- nrow(model_data)
+  model_data <- model_data %>%
+    group_by(Env) %>%
+    filter(
+      NDVI_raw >= mean(NDVI_raw, na.rm = TRUE) - 1.96 * sd(NDVI_raw, na.rm = TRUE),
+      NDVI_raw <= mean(NDVI_raw, na.rm = TRUE) + 1.96 * sd(NDVI_raw, na.rm = TRUE)
+    ) %>%
+    ungroup()
+  cat("NDVI outlier removal (mean ± 1.96 SD per env):",
+      n_before - nrow(model_data), "rows removed. Remaining:", nrow(model_data), "\n")
+  cat("Rows removed per environment:\n")
+  print(table(model_data_raw_orig$Env) - table(model_data$Env))
+} else {
+  warning("NDVI_raw not found — skipping outlier removal.")
+}
+
+cat("\nAll 5 environments retained for modelling:\n")
+cat(paste(sort(unique(as.character(model_data$Env))), collapse = ", "), "\n")
+cat("Total rows:", nrow(model_data), "\n")
 
 group_levels_all <- sort(unique(model_data$group))
 cat("Timepoint × Environment groups:", length(group_levels_all), "\n")
@@ -350,10 +396,12 @@ corrplot(cor_bands, method = "color", type = "upper",
 
 # MCG25 Diagnostic Analysis
 
-MCG25 (timepoint 12) is the single environment that consistently fails in LOEO
-cross-validation. This section investigates whether the failure is driven by
-spectral range differences, a different yield–NDVI relationship within the
-environment, or the unusually late flight timing relative to the other four trials.
+MCG25 (timepoint 12) uses a late-season flight that produces an inverted
+spectral–yield relationship relative to the other four environments. This section
+documents the spectral and agronomic characteristics of MCG25 that make it
+a challenging environment for cross-environment prediction. MCG25 is included
+in model training; the LOEO fold holding out MCG25 will reveal how well each
+method generalises to an inverted-relationship environment.
 
 ```{r mcg25-timepoint-context}
 # ── Timepoint context: how late is MCG25_TP12 relative to the other groups? ─
@@ -496,7 +544,7 @@ vp %>%
   kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
 ```
 
-# DNN Architecture
+# Approach 3: Supervised DNN with Feature Extraction
 
 The network has two components trained **within each Timepoint × Environment group**:
 
@@ -564,6 +612,42 @@ cat("Model architecture defined.\n")
 cat("  Encoder:       n_bands → 16 → 8 → 1 (Synthetic VI)\n")
 cat("  Env embedding: n_envs × d_embed = 4\n")
 cat("  Predictor:     (1 + 4) → 8 → 1 (trait)\n")
+```
+
+```{r fulldnn-definition}
+# ══════════════════════════════════════════════════════════════════════════
+# Option 3: Full DNN (no bottleneck) — n_bands → 16 → 8 || env_embed → 8 → 1
+# Removes the single-neuron bottleneck so the full 8-dimensional spectral
+# representation is passed to the prediction head.
+# ══════════════════════════════════════════════════════════════════════════
+FullDNNModel <- nn_module(
+  classname = "FullDNNModel",
+  initialize = function(n_bands = 5, n_envs = 5, d_embed = 4L,
+                        h1 = 16L, h2 = 8L, pred_h = 8L) {
+    self$fc1      <- nn_linear(n_bands, h1)
+    self$fc2      <- nn_linear(h1, h2)
+    self$env_emb  <- nn_embedding(n_envs, d_embed)
+    self$pred_fc1 <- nn_linear(h2 + d_embed, pred_h)
+    self$pred_fc2 <- nn_linear(pred_h, 1L)
+    self$drop     <- nn_dropout(0.1)
+  },
+  forward = function(bands, env_idx = NULL, env_vec = NULL) {
+    x <- bands %>% self$fc1() %>% nnf_relu() %>% self$drop()
+    x <- x %>% self$fc2() %>% nnf_relu() %>% self$drop()
+    ev <- if (!is.null(env_idx)) {
+      self$env_emb(env_idx)
+    } else {
+      env_vec$expand(c(x$size(1), -1L))
+    }
+    torch_cat(list(x, ev), dim = 2) %>%
+      self$pred_fc1() %>% nnf_relu() %>% self$drop() %>%
+      self$pred_fc2()
+  }
+)
+
+cat("FullDNNModel (no bottleneck) defined.\n")
+cat("  Band encoder:  n_bands → 16 → 8\n")
+cat("  Predictor:     (8 + 4) → 8 → 1 (trait)\n")
 ```
 
 # Training
@@ -998,6 +1082,463 @@ adapt_lm_cv <- function(data_raw, trait, env_levels,
 }
 ```
 
+```{r fulldnn-training-functions}
+# ── Train FullDNNModel ─────────────────────────────────────────────────────
+train_fulldnn <- function(train_df, trait, env_levels,
+                           epochs = 300, lr = 3e-3, batch_size = 64,
+                           seed = NULL, verbose = FALSE) {
+  if (!is.null(seed)) torch_manual_seed(seed)
+  df_sub  <- train_df[!is.na(train_df[[trait]]), ]
+  tensors <- make_tensors(train_df, trait)
+  n       <- tensors$bands$size(1)
+  if (n < 10) return(NULL)
+
+  env_idx <- torch_tensor(
+    match(as.character(df_sub$Env), env_levels), dtype = torch_long()
+  )
+  model <- FullDNNModel(n_bands = length(BAND_NAMES), n_envs = length(env_levels),
+                         d_embed = 4L, h1 = 16L, h2 = 8L, pred_h = 8L)
+  opt   <- optim_adam(model$parameters, lr = lr, weight_decay = 1e-4)
+  sched <- lr_step(opt, step_size = 100, gamma = 0.5)
+
+  model$train()
+  for (ep in seq_len(epochs)) {
+    idx <- sample(n)
+    for (i in seq(1, n, by = batch_size)) {
+      bi <- idx[i:min(i + batch_size - 1, n)]
+      opt$zero_grad()
+      pred <- model(tensors$bands[bi, , drop = FALSE], env_idx = env_idx[bi])
+      loss <- nnf_mse_loss(pred, tensors$y[bi, , drop = FALSE])
+      loss$backward()
+      nn_utils_clip_grad_norm_(model$parameters, 1.0)
+      opt$step()
+    }
+    sched$step()
+    if (verbose && ep %% 100 == 0)
+      cat(sprintf("  ep %d | loss %.4f\n", ep, loss$item()))
+  }
+  model$eval()
+  model
+}
+
+# ── LOEO CV for FullDNNModel ───────────────────────────────────────────────
+loeo_cv_fulldnn <- function(data_raw, trait, env_levels, n_reps = 3,
+                              epochs = 300, lr = 3e-3, batch_size = 64) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(held_env) {
+    train_raw <- data_raw %>% filter(Env != held_env, !is.na(.data[[trait]]))
+    test_raw  <- data_raw %>% filter(Env == held_env,  !is.na(.data[[trait]]))
+    if (nrow(train_raw) < 10 || nrow(test_raw) < 2) return(NULL)
+
+    sc_out   <- scale_from_train(train_raw, train_raw, trait)
+    train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+    test_sc  <- scale_from_train(test_raw, train_raw, trait)$df
+
+    train_env_idx <- torch_tensor(
+      match(sort(unique(as.character(train_raw$Env))), env_levels),
+      dtype = torch_long()
+    )
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      model <- tryCatch(
+        train_fulldnn(train_sc, trait, env_levels = env_levels,
+                      epochs = epochs, lr = lr, batch_size = batch_size,
+                      seed = rep_i * 100L),
+        error = function(e) { message(held_env, " rep", rep_i, ": ", e$message); NULL }
+      )
+      if (is.null(model)) return(NULL)
+      mean_env_vec <- with_no_grad({
+        model$env_emb(train_env_idx)$mean(dim = 1, keepdim = TRUE)
+      })
+      te_ten <- make_tensors(test_sc, trait)
+      with_no_grad({
+        pred_z <- model(te_ten$bands, env_vec = mean_env_vec)$squeeze()$to(device = "cpu")
+      })
+      pred <- as.numeric(pred_z) * trait_sd + trait_mn
+      obs  <- as.numeric(te_ten$y$squeeze()) * trait_sd + trait_mn
+      tibble(held_env = held_env, rep = rep_i, n_test = length(obs),
+             r    = cor(pred, obs, use = "complete.obs"),
+             rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+    })
+  })
+}
+
+# ── Within-env 5-fold CV for FullDNNModel ─────────────────────────────────
+within_env_cv_fulldnn <- function(data_raw, trait, env_levels,
+                                    n_folds = 5, n_reps = 3,
+                                    epochs = 300, lr = 3e-3, batch_size = 64) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(env_i) {
+    env_df    <- data_raw %>% filter(Env == env_i, !is.na(.data[[trait]]))
+    gids      <- unique(env_df$GID)
+    env_i_idx <- match(env_i, env_levels)
+    if (length(gids) < n_folds) {
+      message("Env ", env_i, ": ", length(gids), " GIDs < n_folds — skipping")
+      return(NULL)
+    }
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids   <- gid_fold$GID[gid_fold$fold == f]
+        train_raw_f <- env_df %>% filter(!GID %in% test_gids)
+        test_raw_f  <- env_df %>% filter( GID %in% test_gids)
+        if (nrow(train_raw_f) < 10 || nrow(test_raw_f) < 2) return(NULL)
+        sc_out   <- scale_from_train(train_raw_f, train_raw_f, trait)
+        train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+        test_sc  <- scale_from_train(test_raw_f, train_raw_f, trait)$df
+        model <- tryCatch(
+          train_fulldnn(train_sc, trait, env_levels = env_levels,
+                        epochs = epochs, lr = lr, batch_size = batch_size,
+                        seed = rep_i * 100L + f),
+          error = function(e) NULL
+        )
+        if (is.null(model)) return(NULL)
+        te_ten     <- make_tensors(test_sc, trait)
+        te_env_idx <- torch_tensor(rep(env_i_idx, te_ten$bands$size(1)), dtype = torch_long())
+        with_no_grad({
+          pred_z <- model(te_ten$bands, env_idx = te_env_idx)$squeeze()$to(device = "cpu")
+        })
+        pred <- as.numeric(pred_z) * trait_sd + trait_mn
+        obs  <- as.numeric(te_ten$y$squeeze()) * trait_sd + trait_mn
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+```
+
+```{r sr-functions}
+# ─────────────────────────────────────────────────────────────────────────────
+# Approach 2: Symbolic Regression (LASSO polynomial SR and PySR)
+# ─────────────────────────────────────────────────────────────────────────────
+# ── Degree-2 polynomial feature matrix from band columns ───────────────────
+# Features: 5 linear + 5 squared + 10 pairwise interactions = 20 terms.
+# LASSO then selects the sparse subset that predicts the trait.
+make_poly_features <- function(df) {
+  X       <- as.matrix(df[, BAND_NAMES])
+  squared <- X ^ 2
+  colnames(squared) <- paste0(BAND_NAMES, "_sq")
+  pairs   <- combn(seq_len(ncol(X)), 2, function(idx) X[, idx[1]] * X[, idx[2]])
+  colnames(pairs) <- combn(BAND_NAMES, 2, paste, collapse = "x")
+  cbind(X, squared, pairs)
+}
+
+# ── LASSO polynomial SR — LOEO CV ─────────────────────────────────────────
+lasso_poly_loeo_cv <- function(data_raw, trait) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(held_env) {
+    train_raw <- data_raw %>% filter(Env != held_env, !is.na(.data[[trait]]))
+    test_raw  <- data_raw %>% filter(Env == held_env,  !is.na(.data[[trait]]))
+    if (nrow(train_raw) < 10 || nrow(test_raw) < 2) return(NULL)
+
+    sc_out   <- scale_from_train(train_raw, train_raw, trait)
+    train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+    test_sc  <- scale_from_train(test_raw, train_raw, trait)$df
+
+    X_tr <- make_poly_features(train_sc)
+    X_te <- make_poly_features(test_sc)
+
+    set.seed(42)
+    fit    <- glmnet::cv.glmnet(X_tr, train_sc[[trait]], alpha = 1, nfolds = 5)
+    pred_z <- as.numeric(predict(fit, X_te, s = "lambda.min"))
+    pred   <- pred_z * trait_sd + trait_mn
+    obs    <- test_raw[[trait]]
+
+    # Non-zero coefficients → readable formula string
+    coef_v  <- as.numeric(coef(fit, s = "lambda.min"))
+    feat_nm <- c("(Intercept)", colnames(X_tr))
+    nz      <- which(coef_v != 0)
+    formula_str <- paste(
+      sprintf("%+.4f*%s", coef_v[nz], feat_nm[nz]), collapse = " "
+    )
+
+    tibble(held_env = held_env, n_test = nrow(test_raw),
+           r       = cor(pred, obs, use = "complete.obs"),
+           rmse    = sqrt(mean((pred - obs)^2, na.rm = TRUE)),
+           n_terms = length(nz) - 1L,
+           formula = formula_str)
+  })
+}
+
+# ── LASSO polynomial SR — Within-env 5-fold CV ────────────────────────────
+lasso_poly_wenv_cv <- function(data_raw, trait, n_folds = 5, n_reps = 3) {
+  envs <- sort(unique(as.character(data_raw$Env)))
+  map_dfr(envs, function(env_i) {
+    env_df <- data_raw %>% filter(Env == env_i, !is.na(.data[[trait]]))
+    gids   <- unique(env_df$GID)
+    if (length(gids) < n_folds) return(NULL)
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids   <- gid_fold$GID[gid_fold$fold == f]
+        train_raw_f <- env_df %>% filter(!GID %in% test_gids)
+        test_raw_f  <- env_df %>% filter( GID %in% test_gids)
+        if (nrow(train_raw_f) < 10 || nrow(test_raw_f) < 2) return(NULL)
+        sc_out   <- scale_from_train(train_raw_f, train_raw_f, trait)
+        train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+        test_sc  <- scale_from_train(test_raw_f, train_raw_f, trait)$df
+        X_tr <- make_poly_features(train_sc)
+        X_te <- make_poly_features(test_sc)
+        set.seed(rep_i * 100L + f)
+        fit    <- glmnet::cv.glmnet(X_tr, train_sc[[trait]], alpha = 1, nfolds = 5)
+        pred_z <- as.numeric(predict(fit, X_te, s = "lambda.min"))
+        pred   <- pred_z * trait_sd + trait_mn
+        obs    <- test_raw_f[[trait]]
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+# ── PySR via reticulate (requires: pip install pysr) ──────────────────────
+# If Python / PySR is not installed the functions return an empty tibble and
+# print installation instructions. Set up Python first with:
+#   reticulate::install_python()      # if no Python found
+#   reticulate::py_install("pysr")    # install PySR into that environment
+pysr_loeo_cv <- function(data_raw, trait, niterations = 40L) {
+  pysr_ok <- tryCatch({ reticulate::import("pysr"); TRUE }, error = function(e) FALSE)
+  if (!pysr_ok) {
+    message("PySR not available. Run: reticulate::py_install('pysr') and retry.")
+    return(tibble())
+  }
+  pysr <- reticulate::import("pysr")
+  np   <- reticulate::import("numpy")
+  envs <- sort(unique(as.character(data_raw$Env)))
+
+  map_dfr(envs, function(held_env) {
+    train_raw <- data_raw %>% filter(Env != held_env, !is.na(.data[[trait]]))
+    test_raw  <- data_raw %>% filter(Env == held_env,  !is.na(.data[[trait]]))
+    if (nrow(train_raw) < 10 || nrow(test_raw) < 2) return(NULL)
+
+    sc_out   <- scale_from_train(train_raw, train_raw, trait)
+    train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+    test_sc  <- scale_from_train(test_raw, train_raw, trait)$df
+
+    X_tr <- np$array(as.matrix(train_sc[, BAND_NAMES]))
+    y_tr <- np$array(train_sc[[trait]])
+    X_te <- np$array(as.matrix(test_sc[, BAND_NAMES]))
+
+    model_sr <- pysr$PySRRegressor(
+      niterations      = niterations,
+      binary_operators = list("+", "-", "*", "/"),
+      unary_operators  = list("square", "sqrt"),
+      maxsize          = 20L,
+      verbosity        = 0L,
+      random_state     = 42L,
+      temp_equation_file = TRUE,
+      delete_tempfiles   = TRUE,
+      variable_names   = BAND_NAMES
+    )
+    model_sr$fit(X_tr, y_tr)
+
+    pred_z  <- as.numeric(model_sr$predict(X_te))
+    pred    <- pred_z * trait_sd + trait_mn
+    obs     <- test_raw[[trait]]
+    best_eq <- tryCatch(
+      as.character(model_sr$get_best()[["sympy_format"]]),
+      error = function(e) "N/A"
+    )
+    tibble(held_env = held_env, n_test = nrow(test_raw),
+           r       = cor(pred, obs, use = "complete.obs"),
+           rmse    = sqrt(mean((pred - obs)^2, na.rm = TRUE)),
+           formula = best_eq)
+  })
+}
+
+# ── PySR within-env 5-fold CV ─────────────────────────────────────────────
+pysr_wenv_cv <- function(data_raw, trait, n_folds = 5, n_reps = 3,
+                          niterations = 20L) {
+  pysr_ok <- tryCatch({ reticulate::import("pysr"); TRUE }, error = function(e) FALSE)
+  if (!pysr_ok) {
+    message("PySR not available. Run: reticulate::py_install('pysr') and retry.")
+    return(tibble())
+  }
+  pysr <- reticulate::import("pysr")
+  np   <- reticulate::import("numpy")
+  envs <- sort(unique(as.character(data_raw$Env)))
+
+  map_dfr(envs, function(env_i) {
+    env_df <- data_raw %>% filter(Env == env_i, !is.na(.data[[trait]]))
+    gids   <- unique(env_df$GID)
+    if (length(gids) < n_folds) return(NULL)
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids   <- gid_fold$GID[gid_fold$fold == f]
+        train_raw_f <- env_df %>% filter(!GID %in% test_gids)
+        test_raw_f  <- env_df %>% filter( GID %in% test_gids)
+        if (nrow(train_raw_f) < 10 || nrow(test_raw_f) < 2) return(NULL)
+        sc_out   <- scale_from_train(train_raw_f, train_raw_f, trait)
+        train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+        test_sc  <- scale_from_train(test_raw_f, train_raw_f, trait)$df
+        X_tr <- np$array(as.matrix(train_sc[, BAND_NAMES]))
+        y_tr <- np$array(train_sc[[trait]])
+        X_te <- np$array(as.matrix(test_sc[, BAND_NAMES]))
+        model_sr <- pysr$PySRRegressor(
+          niterations      = niterations,
+          binary_operators = list("+", "-", "*", "/"),
+          unary_operators  = list("square", "sqrt"),
+          maxsize          = 15L,
+          verbosity        = 0L,
+          random_state     = rep_i * 100L + f,
+          temp_equation_file = TRUE,
+          delete_tempfiles   = TRUE,
+          variable_names   = BAND_NAMES
+        )
+        model_sr$fit(X_tr, y_tr)
+        pred_z <- as.numeric(model_sr$predict(X_te))
+        pred   <- pred_z * trait_sd + trait_mn
+        obs    <- test_raw_f[[trait]]
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+```
+
+```{r lbfgs-functions}
+# ─────────────────────────────────────────────────────────────────────────────
+# Approach 1: L-BFGS Coefficient Optimisation of the Normalised-Difference VI
+# ─────────────────────────────────────────────────────────────────────────────
+# Generalises NDVI = (NIR - RED)/(NIR + RED) to all 5 bands with learnable
+# coefficients.  Numerator weights w_num are unrestricted; denominator weights
+# are exp(w_den) > 0 to prevent denominator collapse.  L-BFGS minimises
+# -|cor(VI, trait)| on training data.  Initialised at the NDVI solution.
+# A simple OLS (trait_z ~ VI) calibrates the linear scale after optimisation.
+
+lbfgs_vi <- function(params, X) {
+  n <- ncol(X)
+  w_num <- params[seq_len(n)]
+  w_den <- exp(params[seq_len(n) + n])
+  num   <- drop(X %*% w_num)
+  den   <- drop(X %*% w_den)
+  num / (den + 1e-8)
+}
+
+lbfgs_vi_loeo_cv <- function(data_raw, trait) {
+  envs    <- sort(unique(as.character(data_raw$Env)))
+  n_bands <- length(BAND_NAMES)
+  nir_idx <- which(BAND_NAMES == "nir")
+  red_idx <- which(BAND_NAMES == "red")
+  init_num <- rep(0, n_bands); init_num[nir_idx] <-  1; init_num[red_idx] <- -1
+  init_den <- rep(-3, n_bands); init_den[nir_idx] <- 0; init_den[red_idx] <-  0
+  init_p   <- c(init_num, init_den)
+
+  map_dfr(envs, function(held_env) {
+    train_raw <- data_raw %>% filter(Env != held_env, !is.na(.data[[trait]]))
+    test_raw  <- data_raw %>% filter(Env == held_env,  !is.na(.data[[trait]]))
+    if (nrow(train_raw) < 10 || nrow(test_raw) < 2) return(NULL)
+
+    sc_out   <- scale_from_train(train_raw, train_raw, trait)
+    train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+    test_sc  <- scale_from_train(test_raw, train_raw, trait)$df
+
+    X_tr <- as.matrix(train_sc[, BAND_NAMES])
+    y_tr <- train_sc[[trait]]
+    X_te <- as.matrix(test_sc[, BAND_NAMES])
+
+    obj <- function(p) {
+      vi <- lbfgs_vi(p, X_tr)
+      if (any(!is.finite(vi)) || sd(vi, na.rm = TRUE) < 1e-6) return(1.0)
+      -abs(cor(vi, y_tr, use = "complete.obs"))
+    }
+    opt <- tryCatch(
+      optim(init_p, obj, method = "L-BFGS-B", control = list(maxit = 500)),
+      error = function(e) NULL
+    )
+    if (is.null(opt)) return(NULL)
+
+    vi_tr  <- lbfgs_vi(opt$par, X_tr)
+    vi_te  <- lbfgs_vi(opt$par, X_te)
+    lm_fit <- lm(y ~ vi, data.frame(y = y_tr, vi = vi_tr))
+    pred_z <- predict(lm_fit, data.frame(vi = vi_te))
+    pred   <- pred_z * trait_sd + trait_mn
+    obs    <- test_raw[[trait]]
+
+    w_num <- opt$par[seq_len(n_bands)]
+    w_den <- exp(opt$par[seq_len(n_bands) + n_bands])
+    formula_str <- sprintf(
+      "(%s) / (%s)",
+      paste(sprintf("%+.4f*%s", w_num, BAND_NAMES), collapse = " "),
+      paste(sprintf("+%.4f*%s",  w_den, BAND_NAMES), collapse = " ")
+    )
+    tibble(held_env = held_env, n_test = nrow(test_raw),
+           r    = cor(pred, obs, use = "complete.obs"),
+           rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)),
+           formula = formula_str)
+  })
+}
+
+lbfgs_vi_wenv_cv <- function(data_raw, trait, n_folds = 5, n_reps = 3) {
+  envs    <- sort(unique(as.character(data_raw$Env)))
+  n_bands <- length(BAND_NAMES)
+  nir_idx <- which(BAND_NAMES == "nir"); red_idx <- which(BAND_NAMES == "red")
+  init_num <- rep(0, n_bands); init_num[nir_idx] <-  1; init_num[red_idx] <- -1
+  init_den <- rep(-3, n_bands); init_den[nir_idx] <- 0; init_den[red_idx] <-  0
+  init_p   <- c(init_num, init_den)
+
+  map_dfr(envs, function(env_i) {
+    env_df <- data_raw %>% filter(Env == env_i, !is.na(.data[[trait]]))
+    gids   <- unique(env_df$GID)
+    if (length(gids) < n_folds) return(NULL)
+    map_dfr(seq_len(n_reps), function(rep_i) {
+      set.seed(rep_i * 77L)
+      shuffled <- sample(gids)
+      fold_id  <- rep(seq_len(n_folds), length.out = length(shuffled))
+      gid_fold <- tibble(GID = shuffled, fold = fold_id)
+      map_dfr(seq_len(n_folds), function(f) {
+        test_gids   <- gid_fold$GID[gid_fold$fold == f]
+        train_raw_f <- env_df %>% filter(!GID %in% test_gids)
+        test_raw_f  <- env_df %>% filter( GID %in% test_gids)
+        if (nrow(train_raw_f) < 10 || nrow(test_raw_f) < 2) return(NULL)
+        sc_out   <- scale_from_train(train_raw_f, train_raw_f, trait)
+        train_sc <- sc_out$df; trait_mn <- sc_out$trait_mn; trait_sd <- sc_out$trait_sd
+        test_sc  <- scale_from_train(test_raw_f, train_raw_f, trait)$df
+        X_tr <- as.matrix(train_sc[, BAND_NAMES])
+        y_tr <- train_sc[[trait]]
+        X_te <- as.matrix(test_sc[, BAND_NAMES])
+        obj <- function(p) {
+          vi <- lbfgs_vi(p, X_tr)
+          if (any(!is.finite(vi)) || sd(vi, na.rm = TRUE) < 1e-6) return(1.0)
+          -abs(cor(vi, y_tr, use = "complete.obs"))
+        }
+        set.seed(rep_i * 100L + f)
+        opt <- tryCatch(
+          optim(init_p, obj, method = "L-BFGS-B", control = list(maxit = 500)),
+          error = function(e) NULL
+        )
+        if (is.null(opt)) return(NULL)
+        vi_tr  <- lbfgs_vi(opt$par, X_tr)
+        vi_te  <- lbfgs_vi(opt$par, X_te)
+        lm_fit <- lm(y ~ vi, data.frame(y = y_tr, vi = vi_tr))
+        pred_z <- predict(lm_fit, data.frame(vi = vi_te))
+        pred   <- pred_z * trait_sd + trait_mn
+        obs    <- test_raw_f[[trait]]
+        tibble(Env = env_i, fold = f, rep = rep_i, n_test = length(obs),
+               r    = cor(pred, obs, use = "complete.obs"),
+               rmse = sqrt(mean((pred - obs)^2, na.rm = TRUE)))
+      })
+    })
+  })
+}
+
+cat("L-BFGS VI functions defined.\n")
+```
+
 ```{r run-training, cache=TRUE}
 # ── Select traits with enough observations ────────────────────────────────
 min_obs <- 30
@@ -1103,6 +1644,92 @@ ndvi_loeo_centered <- map_dfr(usable_traits, function(tr) {
   res
 })
 cat("NDVI centered LOEO done. Rows:", nrow(ndvi_loeo_centered), "\n")
+```
+
+```{r run-fulldnn-training, cache=TRUE}
+cat("\nRunning LOEO CV — FullDNN (no bottleneck)...\n")
+cv_loeo_fulldnn <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- loeo_cv_fulldnn(model_data_raw, trait, env_levels = env_levels,
+                                n_reps = 3, epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait <- trait
+  res
+})
+cat("FullDNN LOEO done. Rows:", nrow(cv_loeo_fulldnn), "\n")
+
+cat("\nRunning within-env 5-fold CV — FullDNN (no bottleneck)...\n")
+cv_wenv_fulldnn <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- within_env_cv_fulldnn(model_data_raw, trait, env_levels = env_levels,
+                                      n_folds = 5, n_reps = 3,
+                                      epochs = 300, lr = 3e-3, batch_size = 64)
+  res$trait <- trait
+  res
+})
+cat("FullDNN within-env CV done. Rows:", nrow(cv_wenv_fulldnn), "\n")
+```
+
+```{r run-lasso-sr, cache=TRUE}
+cat("\nRunning LOEO CV — LASSO polynomial SR...\n")
+cv_loeo_lasso <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- lasso_poly_loeo_cv(model_data_raw, trait)
+  res$trait <- trait
+  res
+})
+cat("LASSO SR LOEO done. Rows:", nrow(cv_loeo_lasso), "\n")
+
+cat("\nRunning within-env 5-fold CV — LASSO polynomial SR...\n")
+cv_wenv_lasso <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- lasso_poly_wenv_cv(model_data_raw, trait, n_folds = 5, n_reps = 3)
+  res$trait <- trait
+  res
+})
+cat("LASSO SR within-env CV done. Rows:", nrow(cv_wenv_lasso), "\n")
+```
+
+```{r run-lbfgs, cache=TRUE}
+cat("\nRunning LOEO CV — L-BFGS generalised VI (Approach 1)...\n")
+cv_loeo_lbfgs <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res <- lbfgs_vi_loeo_cv(model_data_raw, trait)
+  if (nrow(res) > 0) res$trait <- trait
+  res
+})
+cat("L-BFGS LOEO done. Rows:", nrow(cv_loeo_lbfgs), "\n")
+
+cat("\nRunning within-env 5-fold CV — L-BFGS generalised VI...\n")
+cv_wenv_lbfgs <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res <- lbfgs_vi_wenv_cv(model_data_raw, trait, n_folds = 5, n_reps = 3)
+  if (nrow(res) > 0) res$trait <- trait
+  res
+})
+cat("L-BFGS within-env CV done. Rows:", nrow(cv_wenv_lbfgs), "\n")
+```
+
+```{r run-pysr, cache=TRUE}
+# PySR runs only when Python + PySR are available; otherwise returns empty tibbles.
+# To enable: reticulate::install_python(); reticulate::py_install("pysr")
+cat("\nRunning LOEO CV — PySR...\n")
+cv_loeo_pysr <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- pysr_loeo_cv(model_data_raw, trait, niterations = 40L)
+  if (nrow(res) > 0) res$trait <- trait
+  res
+})
+cat("PySR LOEO done. Rows:", nrow(cv_loeo_pysr), "\n")
+
+cat("\nRunning within-env 5-fold CV — PySR...\n")
+cv_wenv_pysr <- map_dfr(usable_traits, function(trait) {
+  cat("  trait:", trait, "\n")
+  res       <- pysr_wenv_cv(model_data_raw, trait, n_folds = 5, n_reps = 3,
+                             niterations = 20L)
+  if (nrow(res) > 0) res$trait <- trait
+  res
+})
+cat("PySR within-env CV done. Rows:", nrow(cv_wenv_pysr), "\n")
 ```
 
 # Results: Cross-Validation Accuracy
@@ -1261,13 +1888,15 @@ cv_scenario_tbl %>%
   theme(legend.position = "bottom")
 ```
 
-# NDVI Baseline Comparison
+# Approach 1 Results: L-BFGS VI Coefficient Optimisation
 
-NDVI-based linear regression was run under the same two CV schemes (LOEO and
-within-environment 5-fold CV by GID) as the DNN, operating on raw (unscaled)
-trait values so RMSE is directly comparable.
+## NDVI Linear Regression (Starting Point)
 
-## NDVI Baseline — LOEO
+Standard NDVI with a fixed formula was run under both CV schemes as the
+starting-point reference — before coefficient optimisation — operating on
+raw (unscaled) trait values so RMSE is directly comparable.
+
+## NDVI — LOEO
 
 ```{r ndvi-loeo-table}
 if (nrow(ndvi_loeo) > 0) {
@@ -1295,7 +1924,7 @@ if (nrow(ndvi_loeo) > 0) {
 }
 ```
 
-## NDVI Baseline — Within-Environment 5-Fold CV
+## NDVI — Within-Environment 5-Fold CV
 
 ```{r ndvi-wenv-table}
 if (nrow(ndvi_wenv) > 0) {
@@ -1327,7 +1956,7 @@ if (nrow(ndvi_wenv) > 0) {
 }
 ```
 
-## DNN Synthetic VI vs. NDVI — Combined Comparison
+## DNN vs. NDVI — Combined Comparison
 
 ```{r ndvi-dnn-comparison-table}
 if (nrow(ndvi_loeo) > 0 && nrow(ndvi_wenv) > 0) {
@@ -1455,6 +2084,101 @@ loeo_4way %>%
        colour = NULL, shape = NULL) +
   theme_bw(base_size = 13) +
   theme(legend.position = "bottom")
+```
+
+## L-BFGS Optimised VI Results
+
+L-BFGS optimises the NDVI ratio structure over all 5 bands, extending it
+beyond the fixed NIR/Red pair. Results below compare the optimised VI
+against the NDVI starting point under the same two CV designs.
+
+```{r lbfgs-loeo-table}
+if (nrow(cv_loeo_lbfgs) > 0) {
+  lbfgs_loeo_fold <- cv_loeo_lbfgs %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, held_env) %>%
+    summarise(r    = mean(r,    na.rm = TRUE),
+              rmse = mean(rmse, na.rm = TRUE),
+              n_test = first(n_test), .groups = "drop")
+
+  lbfgs_loeo_summary <- lbfgs_loeo_fold %>%
+    group_by(trait) %>%
+    summarise(mean_r    = mean(r,    na.rm = TRUE),
+              sd_r      = sd(r,     na.rm = TRUE),
+              mean_rmse = mean(rmse, na.rm = TRUE),
+              .groups = "drop")
+
+  lbfgs_loeo_summary %>%
+    kable(digits = 3,
+          col.names = c("Trait", "Mean r", "SD r", "Mean RMSE"),
+          caption   = "L-BFGS Generalised VI — LOEO accuracy") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE)
+} else {
+  cat("L-BFGS LOEO results not available.\n")
+}
+```
+
+```{r lbfgs-wenv-table}
+if (nrow(cv_wenv_lbfgs) > 0) {
+  lbfgs_wenv_summary <- cv_wenv_lbfgs %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>%
+    summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    group_by(trait) %>%
+    summarise(mean_r    = mean(r, na.rm = TRUE),
+              sd_r      = sd(r,  na.rm = TRUE),
+              .groups = "drop")
+
+  lbfgs_wenv_summary %>%
+    kable(digits = 3,
+          col.names = c("Trait", "Mean r", "SD r"),
+          caption   = "L-BFGS Generalised VI — within-environment 5-fold CV accuracy") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE)
+} else {
+  cat("L-BFGS within-env results not available.\n")
+}
+```
+
+```{r lbfgs-vs-ndvi-table}
+if (nrow(cv_loeo_lbfgs) > 0 && nrow(ndvi_loeo) > 0) {
+  ndvi_r_loeo  <- ndvi_loeo %>%
+    filter(!is.na(r)) %>%
+    group_by(trait) %>%
+    summarise(ndvi_r = mean(r, na.rm = TRUE), .groups = "drop")
+
+  lbfgs_r_loeo <- cv_loeo_lbfgs %>%
+    filter(!is.na(r)) %>%
+    group_by(trait) %>%
+    summarise(lbfgs_r = mean(r, na.rm = TRUE), .groups = "drop")
+
+  comp_lbfgs <- left_join(ndvi_r_loeo, lbfgs_r_loeo, by = "trait") %>%
+    mutate(delta_r = round(lbfgs_r - ndvi_r, 3),
+           ndvi_r  = round(ndvi_r,  3),
+           lbfgs_r = round(lbfgs_r, 3))
+
+  comp_lbfgs %>%
+    kable(digits = 3,
+          col.names = c("Trait", "NDVI r (LOEO)", "L-BFGS r (LOEO)", "Δr (L-BFGS − NDVI)"),
+          caption   = "L-BFGS coefficient optimisation vs. NDVI linear regression (LOEO)") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE) %>%
+    column_spec(4, bold = TRUE,
+                color = ifelse(comp_lbfgs$delta_r > 0, "forestgreen", "firebrick"))
+}
+```
+
+```{r lbfgs-formula-table}
+if (nrow(cv_loeo_lbfgs) > 0 && "formula" %in% names(cv_loeo_lbfgs)) {
+  cv_loeo_lbfgs %>%
+    select(trait, held_env, r, formula) %>%
+    mutate(r = round(r, 3)) %>%
+    kable(col.names = c("Trait", "Held-out env", "r", "Optimised VI formula"),
+          caption   = "L-BFGS VI — optimised formula per LOEO fold") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = TRUE, font_size = 9)
+}
 ```
 
 # Transfer Learning: Two-Stage Adaptation CV
@@ -1879,6 +2603,238 @@ if (length(vi_cols) > 0 && nrow(synvi_rows) > 0) {
              addCoef.col = "black", number.cex = 0.65,
              title = "r(Standard VI, Synthetic VI)", mar = c(0,0,2,0))
   }
+}
+```
+
+# All-Model Comparison
+
+Side-by-side comparison of all three approaches under the same LOEO and
+within-environment 5-fold CV designs.
+
+**Approach 1 — L-BFGS Coefficient Optimisation**
+
+- **NDVI (linear)** — fixed NIR/Red ratio, linear regression (baseline before optimisation)
+- **L-BFGS VI** — NDVI structure extended to all 5 bands with L-BFGS-optimised coefficients
+
+**Approach 2 — Symbolic Regression**
+
+- **LASSO poly SR** — LASSO on degree-2 polynomial of all 5 bands (optimised coefficients, fixed polynomial structure)
+- **PySR** — genetic programming over symbolic expressions (optimises both structure and coefficients; requires Python+PySR)
+
+**Approach 3 — Supervised DNN with Feature Extraction**
+
+- **DNN bottleneck (SynVI)** — Synthetic VI model (5 → 16 → 8 → 1 bottleneck + env embedding)
+- **DNN no-bottleneck** — full DNN (5 → 16 → 8 ‖ env embed → 8 → 1) upper-bound reference
+
+```{r all-model-loeo-table}
+# ── LOEO: aggregate each model to mean r per trait ────────────────────────
+agg_loeo <- function(cv_df, model_label) {
+  cv_df %>%
+    filter(!is.na(r)) %>%
+    group_by(trait) %>%
+    summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = model_label)
+}
+
+loeo_all <- bind_rows(
+  ndvi_loeo %>%
+    filter(!is.na(r)) %>%
+    group_by(trait) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "NDVI (linear)"),
+  if (nrow(cv_loeo_lbfgs) > 0) agg_loeo(cv_loeo_lbfgs, "L-BFGS VI") else NULL,
+  agg_loeo(cv_loeo_lasso,   "LASSO poly SR"),
+  agg_loeo(cv_loeo,         "DNN bottleneck (SynVI)"),
+  agg_loeo(cv_loeo_fulldnn, "DNN no-bottleneck")
+)
+
+if (nrow(cv_loeo_pysr) > 0)
+  loeo_all <- bind_rows(loeo_all, agg_loeo(cv_loeo_pysr, "PySR"))
+
+loeo_all_wide <- loeo_all %>%
+  pivot_wider(names_from = model, values_from = r) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+loeo_all_wide %>%
+  kable(digits = 3,
+        caption = "LOEO mean Pearson r — all modelling approaches") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r all-model-loeo-plot, fig.height=5, fig.cap="LOEO Pearson r: all modelling approaches per held-out environment"}
+loeo_per_env <- bind_rows(
+  ndvi_loeo %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, held_env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "NDVI (linear)"),
+  if (nrow(cv_loeo_lbfgs) > 0)
+    cv_loeo_lbfgs %>%
+      filter(!is.na(r)) %>%
+      group_by(trait, held_env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+      mutate(model = "L-BFGS VI")
+  else NULL,
+  cv_loeo_lasso %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, held_env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "LASSO poly SR"),
+  cv_loeo %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, held_env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "DNN bottleneck (SynVI)"),
+  cv_loeo_fulldnn %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, held_env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "DNN no-bottleneck")
+)
+if (nrow(cv_loeo_pysr) > 0)
+  loeo_per_env <- bind_rows(
+    loeo_per_env,
+    cv_loeo_pysr %>%
+      filter(!is.na(r)) %>%
+      group_by(trait, held_env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+      mutate(model = "PySR")
+  )
+
+model_colours <- c(
+  "NDVI (linear)"          = "#3182bd",
+  "L-BFGS VI"              = "#08519c",
+  "LASSO poly SR"          = "#31a354",
+  "PySR"                   = "#006d2c",
+  "DNN bottleneck (SynVI)" = "#e34a33",
+  "DNN no-bottleneck"      = "#d95f02"
+)
+model_shapes <- c(
+  "NDVI (linear)"          = 17,
+  "L-BFGS VI"              = 2,
+  "LASSO poly SR"          = 15,
+  "PySR"                   = 8,
+  "DNN bottleneck (SynVI)" = 16,
+  "DNN no-bottleneck"      = 18
+)
+
+loeo_per_env %>%
+  mutate(model = factor(model, levels = names(model_colours))) %>%
+  ggplot(aes(x = r, y = reorder(held_env, r, mean, na.rm = TRUE),
+             colour = model, shape = model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_point(size = 3.5, alpha = 0.9) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_manual(values = model_colours) +
+  scale_shape_manual(values  = model_shapes) +
+  labs(x = "LOEO Pearson r", y = "Held-out environment",
+       title  = "LOEO accuracy — all modelling approaches",
+       colour = NULL, shape = NULL) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+```{r all-model-wenv-table}
+agg_wenv <- function(cv_df, model_label) {
+  cv_df %>%
+    filter(!is.na(r)) %>%
+    group_by(trait) %>%
+    summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = model_label)
+}
+
+wenv_all <- bind_rows(
+  ndvi_wenv %>%
+    filter(!is.na(r)) %>%
+    group_by(trait) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "NDVI (linear)"),
+  if (nrow(cv_wenv_lbfgs) > 0) agg_wenv(cv_wenv_lbfgs, "L-BFGS VI") else NULL,
+  agg_wenv(cv_wenv_lasso,   "LASSO poly SR"),
+  agg_wenv(cv_wenv,         "DNN bottleneck (SynVI)"),
+  agg_wenv(cv_wenv_fulldnn, "DNN no-bottleneck")
+)
+if (nrow(cv_wenv_pysr) > 0)
+  wenv_all <- bind_rows(wenv_all, agg_wenv(cv_wenv_pysr, "PySR"))
+
+wenv_all %>%
+  pivot_wider(names_from = model, values_from = r) %>%
+  mutate(across(where(is.numeric), ~ round(., 3))) %>%
+  kable(digits = 3,
+        caption = "Within-env 5-fold CV mean Pearson r — all modelling approaches") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+```{r all-model-wenv-plot, fig.height=5, fig.cap="Within-env CV Pearson r: all modelling approaches"}
+wenv_per_env <- bind_rows(
+  ndvi_wenv %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "NDVI (linear)"),
+  if (nrow(cv_wenv_lbfgs) > 0)
+    cv_wenv_lbfgs %>%
+      filter(!is.na(r)) %>%
+      group_by(trait, Env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+      mutate(model = "L-BFGS VI")
+  else NULL,
+  cv_wenv_lasso %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "LASSO poly SR"),
+  cv_wenv %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "DNN bottleneck (SynVI)"),
+  cv_wenv_fulldnn %>%
+    filter(!is.na(r)) %>%
+    group_by(trait, Env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+    mutate(model = "DNN no-bottleneck")
+)
+if (nrow(cv_wenv_pysr) > 0)
+  wenv_per_env <- bind_rows(
+    wenv_per_env,
+    cv_wenv_pysr %>%
+      filter(!is.na(r)) %>%
+      group_by(trait, Env) %>% summarise(r = mean(r, na.rm = TRUE), .groups = "drop") %>%
+      mutate(model = "PySR")
+  )
+
+wenv_per_env %>%
+  mutate(model = factor(model, levels = names(model_colours))) %>%
+  ggplot(aes(x = r, y = reorder(Env, r, mean, na.rm = TRUE),
+             colour = model, shape = model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey60") +
+  geom_point(size = 3.5, alpha = 0.9) +
+  facet_wrap(~trait, ncol = 2) +
+  scale_colour_manual(values = model_colours) +
+  scale_shape_manual(values  = model_shapes) +
+  labs(x = "Within-env Pearson r", y = "Environment",
+       title  = "Within-env CV accuracy — all modelling approaches",
+       colour = NULL, shape = NULL) +
+  theme_bw(base_size = 13) +
+  theme(legend.position = "bottom")
+```
+
+```{r lasso-sr-formula}
+# ── Display the LASSO polynomial formula per held-out environment ──────────
+if (nrow(cv_loeo_lasso) > 0 && "formula" %in% names(cv_loeo_lasso)) {
+  cv_loeo_lasso %>%
+    select(trait, held_env, r, n_terms, formula) %>%
+    mutate(r = round(r, 3)) %>%
+    kable(col.names = c("Trait","Held-out env","r","Active terms","LASSO formula"),
+          caption   = "LASSO polynomial SR — selected formula per LOEO fold") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = TRUE, font_size = 9)
+}
+```
+
+```{r pysr-formula}
+# ── Display the PySR-discovered formula per held-out environment ───────────
+if (nrow(cv_loeo_pysr) > 0 && "formula" %in% names(cv_loeo_pysr)) {
+  cv_loeo_pysr %>%
+    select(trait, held_env, r, formula) %>%
+    mutate(r = round(r, 3)) %>%
+    kable(col.names = c("Trait","Held-out env","r","PySR formula"),
+          caption   = "PySR symbolic regression — discovered formula per LOEO fold") %>%
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = TRUE, font_size = 9)
+} else {
+  cat("PySR results not available (Python/PySR not installed).\n")
+  cat("To enable: reticulate::install_python(); reticulate::py_install('pysr')\n")
 }
 ```
 

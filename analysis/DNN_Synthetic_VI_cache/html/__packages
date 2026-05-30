@@ -1,4 +1,3 @@
-workflowr
 tidyverse
 ggplot2
 tibble
@@ -14,3 +13,6 @@ corrplot
 knitr
 kableExtra
 torch
+Matrix
+glmnet
+reticulate
