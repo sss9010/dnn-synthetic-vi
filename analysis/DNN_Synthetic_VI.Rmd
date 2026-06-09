@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Comparing Spectral VI Derivation Approaches for Barley Yield Prediction"
 author: "Siim Sepp"
 date: "`r Sys.time()`"
@@ -246,9 +246,7 @@ pheno_raw %>%
     pct_na = ~mean(is.na(.)) * 100
   ))) %>%
   pivot_longer(everything(), names_to = c("band","stat"), names_sep = "_(?=[^_]+$)") %>%
-  pivot_wider(names_from = stat, values_from = value) %>%
-  kable(digits = 3, caption = "Band summary statistics") %>%
-  kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+  pivot_wider(names_from = stat, values_from = value)
 ```
 
 # Data Preparation
@@ -319,11 +317,10 @@ if ("NDVI_raw" %in% names(model_data)) {
   model_data <- model_data %>%
     group_by(Env) %>%
     filter(
-      NDVI_raw >= mean(NDVI_raw, na.rm = TRUE) - 1.96 * sd(NDVI_raw, na.rm = TRUE),
-      NDVI_raw <= mean(NDVI_raw, na.rm = TRUE) + 1.96 * sd(NDVI_raw, na.rm = TRUE)
+      abs(NDVI_raw - median(NDVI_raw, na.rm = TRUE)) <= 2.5 * mad(NDVI_raw, na.rm = TRUE)
     ) %>%
     ungroup()
-  cat("NDVI outlier removal (mean ± 1.96 SD per env):",
+  cat("NDVI outlier removal (median ± 2.5 × MAD per env):",
       n_before - nrow(model_data), "rows removed. Remaining:", nrow(model_data), "\n")
   cat("Rows removed per environment:\n")
   print(table(model_data_raw_orig$Env) - table(model_data$Env))
@@ -348,7 +345,8 @@ print(group_levels_all)
 model_data <- model_data %>%
   group_by(Env) %>%
   mutate(across(all_of(BAND_NAMES),
-                ~ (. - mean(., na.rm = TRUE)) / (sd(., na.rm = TRUE) + 1e-8))) %>%
+                ~ (. - mean(., na.rm = TRUE)) / (sd(., na.rm = TRUE) + 1e-8)),
+         NDVI_centered = (NDVI_raw - mean(NDVI_raw, na.rm = TRUE)) / (sd(NDVI_raw, na.rm = TRUE) + 1e-8)) %>%
   ungroup()
 
 cat("\nPer-environment band standardisation applied.\n")
@@ -394,155 +392,53 @@ corrplot(cor_bands, method = "color", type = "upper",
          title = "Band–Band Correlations", mar = c(0,0,2,0))
 ```
 
-# MCG25 Diagnostic Analysis
+```{r yield-ndvi-scatter, fig.cap="Yield vs NDVI per environment — each point is one observation coloured by environment"}
+trait_diag_prep <- trait_cols[1]
 
-MCG25 (timepoint 12) uses a late-season flight that produces an inverted
-spectral–yield relationship relative to the other four environments. This section
-documents the spectral and agronomic characteristics of MCG25 that make it
-a challenging environment for cross-environment prediction. MCG25 is included
-in model training; the LOEO fold holding out MCG25 will reveal how well each
-method generalises to an inverted-relationship environment.
-
-```{r mcg25-timepoint-context}
-# ── Timepoint context: how late is MCG25_TP12 relative to the other groups? ─
-tp_context <- model_data_raw_orig %>%
-  distinct(Env, Timepoint, group) %>%
-  arrange(Timepoint)
-
-tp_context %>%
-  kable(col.names = c("Environment", "Timepoint", "Group"),
-        caption = "Selected Timepoint × Environment groups — MCG25 uses a much later flight") %>%
-  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
-```
-
-```{r mcg25-yield-ndvi-dist, fig.height=5, fig.cap="Yield and NDVI distributions per environment"}
-p_yield <- model_data_raw_orig %>%
-  filter(!is.na(.data[[trait_cols[1]]])) %>%
-  ggplot(aes(x = .data[[trait_cols[1]]], fill = Env)) +
-  geom_density(alpha = 0.65) +
-  facet_wrap(~Env, ncol = 5, scales = "free_y") +
-  scale_fill_brewer(palette = "Set2") +
-  labs(x = trait_cols[1], y = "Density", title = "Yield distribution") +
-  theme_bw(base_size = 10) + theme(legend.position = "none")
-
-p_ndvi <- model_data_raw_orig %>%
-  ggplot(aes(x = NDVI_raw, fill = Env)) +
-  geom_density(alpha = 0.65) +
-  facet_wrap(~Env, ncol = 5, scales = "free_y") +
-  scale_fill_brewer(palette = "Set2") +
-  labs(x = "NDVI (raw)", y = "Density", title = "NDVI distribution") +
-  theme_bw(base_size = 10) + theme(legend.position = "none")
-
-p_yield / p_ndvi
-```
-
-```{r mcg25-band-distributions, fig.height=4, fig.cap="Raw band reflectance distributions by environment — MCG25 at TP12 may occupy a different spectral range"}
-model_data_raw_orig %>%
-  select(Env, all_of(BAND_NAMES)) %>%
-  pivot_longer(all_of(BAND_NAMES), names_to = "band", values_to = "value") %>%
-  mutate(band = factor(band, levels = BAND_NAMES)) %>%
-  ggplot(aes(x = Env, y = value, fill = Env)) +
-  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
-  facet_wrap(~band, scales = "free_y", nrow = 1) +
-  scale_fill_brewer(palette = "Set2") +
-  labs(x = NULL, y = "Reflectance", title = "Band reflectance by environment") +
-  theme_bw(base_size = 10) +
-  theme(axis.text.x = element_text(angle = 35, hjust = 1),
-        legend.position = "none")
-```
-
-```{r mcg25-ndvi-yield-scatter, fig.height=6, fig.cap="NDVI vs yield within each environment — correlation and regression line"}
-trait_diag <- trait_cols[1]
-
-cors_ndvi <- model_data_raw_orig %>%
-  filter(!is.na(.data[[trait_diag]]), !is.na(NDVI_raw)) %>%
+cors_prep <- model_data_raw_orig %>%
+  filter(!is.na(.data[[trait_diag_prep]]), !is.na(NDVI_raw)) %>%
   group_by(Env) %>%
-  summarise(r     = cor(NDVI_raw, .data[[trait_diag]], use = "complete.obs"),
+  summarise(r     = cor(NDVI_raw, .data[[trait_diag_prep]], use = "complete.obs"),
             label = paste0("r = ", round(r, 3)),
             .groups = "drop")
 
-model_data_raw_orig %>%
-  filter(!is.na(.data[[trait_diag]]), !is.na(NDVI_raw)) %>%
-  ggplot(aes(x = NDVI_raw, y = .data[[trait_diag]], colour = Env)) +
+model_data_raw %>%
+  filter(!is.na(.data[[trait_diag_prep]]), !is.na(NDVI_raw)) %>%
+  ggplot(aes(x = NDVI_raw, y = .data[[trait_diag_prep]], colour = Env)) +
   geom_point(alpha = 0.35, size = 1.2) +
   geom_smooth(method = "lm", se = TRUE, colour = "black", linewidth = 0.8) +
-  geom_label(data = cors_ndvi,
+  geom_label(data = cors_prep,
              aes(x = -Inf, y = Inf, label = label),
              hjust = -0.05, vjust = 1.4,
              inherit.aes = FALSE, size = 3.5, fontface = "bold",
              fill = "white", label.size = 0.2) +
   facet_wrap(~Env, ncol = 3, scales = "free") +
   scale_colour_brewer(palette = "Set2") +
-  labs(x = "NDVI (raw)", y = trait_diag,
-       title = "NDVI vs yield: within-environment scatter") +
+  labs(x = "NDVI", y = trait_diag_prep,
+       title = "Yield vs NDVI by environment filtered") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "none")
+
+
+
+model_data_raw_orig %>%
+  filter(!is.na(.data[[trait_diag_prep]]), !is.na(NDVI_raw)) %>%
+  ggplot(aes(x = NDVI_raw, y = .data[[trait_diag_prep]], colour = Env)) +
+  geom_point(alpha = 0.35, size = 1.2) +
+  geom_smooth(method = "lm", se = TRUE, colour = "black", linewidth = 0.8) +
+  geom_label(data = cors_prep,
+             aes(x = -Inf, y = Inf, label = label),
+             hjust = -0.05, vjust = 1.4,
+             inherit.aes = FALSE, size = 3.5, fontface = "bold",
+             fill = "white", label.size = 0.2) +
+  facet_wrap(~Env, ncol = 3, scales = "free") +
+  scale_colour_brewer(palette = "Set2") +
+  labs(x = "NDVI", y = trait_diag_prep,
+       title = "Yield vs NDVI by environment unfiltered") +
   theme_bw(base_size = 11) +
   theme(legend.position = "none")
 ```
 
-```{r mcg25-band-yield-cors}
-# ── Within-environment Pearson r for every band and NDVI vs trait ──────────
-trait_diag <- trait_cols[1]
-
-band_yield_cors <- model_data_raw_orig %>%
-  filter(!is.na(.data[[trait_diag]])) %>%
-  group_by(Env) %>%
-  summarise(
-    across(all_of(c(BAND_NAMES, "NDVI_raw")),
-           ~ round(cor(., .data[[trait_diag]], use = "complete.obs"), 3)),
-    n_obs = sum(!is.na(.data[[trait_diag]])),
-    .groups = "drop"
-  )
-
-band_yield_cors %>%
-  kable(caption = paste("Within-environment Pearson r: each band and NDVI vs", trait_diag)) %>%
-  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
-```
-
-```{r mcg25-band-yield-heatmap, fig.height=3.5, fig.cap="Heatmap of within-environment band–yield correlations"}
-band_yield_cors %>%
-  select(Env, all_of(BAND_NAMES), NDVI_raw) %>%
-  pivot_longer(-Env, names_to = "band", values_to = "r") %>%
-  mutate(band = factor(band, levels = c(BAND_NAMES, "NDVI_raw"))) %>%
-  ggplot(aes(x = band, y = Env, fill = r)) +
-  geom_tile(colour = "white", linewidth = 0.5) +
-  geom_text(aes(label = round(r, 2)), size = 3.5, fontface = "bold") +
-  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#b2182b",
-                       midpoint = 0, limits = c(-1, 1)) +
-  labs(x = "Spectral predictor", y = NULL,
-       title = paste("Within-environment Pearson r — band/NDVI vs", trait_diag),
-       fill = "r") +
-  theme_bw(base_size = 11) +
-  theme(axis.text.x = element_text(angle = 20, hjust = 1))
-```
-
-```{r mcg25-between-within-variance}
-# ── Variance partitioning: η² (between-env SS / total SS) per band ────────
-# High η² means most spectral variance is between environments (not genotypes).
-# If MCG25 is spectrally extreme, it will dominate the between-env component.
-vp <- model_data_raw_orig %>%
-  select(Env, all_of(BAND_NAMES), NDVI_raw, all_of(trait_cols[1])) %>%
-  pivot_longer(-Env, names_to = "variable", values_to = "value") %>%
-  filter(!is.na(value)) %>%
-  group_by(variable) %>%
-  mutate(grand_mean = mean(value)) %>%
-  group_by(variable, Env) %>%
-  mutate(env_mean = mean(value)) %>%
-  ungroup() %>%
-  group_by(variable) %>%
-  summarise(
-    SS_total   = sum((value - grand_mean)^2),
-    SS_between = sum((env_mean - grand_mean)^2),
-    eta2       = round(SS_between / SS_total, 3),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(eta2))
-
-vp %>%
-  kable(col.names = c("Variable", "SS total", "SS between-env", "η² (between-env)"),
-        digits = c(0, 0, 0, 3),
-        caption = "Variance partitioning: proportion of total variance attributable to environment") %>%
-  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
-```
 
 # Approach 3: Supervised DNN with Feature Extraction
 
@@ -595,7 +491,7 @@ SyntheticVIModel <- nn_module(
   forward = function(bands, env_idx = NULL, env_vec = NULL) {
     vi <- self$encoder(bands)                           # (N, 1)
     ev <- if (!is.null(env_idx)) {
-      self$env_emb(env_idx)                             # (N, d_embed) — known env
+      self$env_emb(env_idx$view(-1L))                   # (N, d_embed) — view ensures 1-D index
     } else {
       env_vec$expand(c(vi$size(1), -1L))                # broadcast mean embed for unseen env
     }
@@ -635,7 +531,7 @@ FullDNNModel <- nn_module(
     x <- bands %>% self$fc1() %>% nnf_relu() %>% self$drop()
     x <- x %>% self$fc2() %>% nnf_relu() %>% self$drop()
     ev <- if (!is.null(env_idx)) {
-      self$env_emb(env_idx)
+      self$env_emb(env_idx$view(-1L))
     } else {
       env_vec$expand(c(x$size(1), -1L))
     }
@@ -1580,14 +1476,23 @@ cat("Within-env CV done. Rows:", nrow(cv_wenv), "\n")
 
 ```{r ndvi-baseline}
 # ── NDVI linear-regression baseline (same CV design as DNN) ─────────────
-if (!"NDVI_raw" %in% names(model_data_raw)) {
-  warning("NDVI_raw not found in model_data_raw — skipping NDVI baseline.")
+if (!"NDVI_centered" %in% names(model_data_raw)) {
+  warning("NDVI_centered not found in model_data_raw — skipping NDVI baseline.")
   ndvi_loeo <- tibble()
   ndvi_wenv <- tibble()
 } else {
+  # Z-score yield per environment for the NDVI baseline only.
+  # model_data_raw retains the original-scale trait for DNN/LASSO/LBFGS,
+  # which handle their own scaling via scale_from_train.
+  model_data_raw_ndvi <- model_data_raw %>%
+    group_by(Env) %>%
+    mutate(across(all_of(usable_traits),
+                  ~ (. - mean(., na.rm = TRUE)) / (sd(., na.rm = TRUE) + 1e-8))) %>%
+    ungroup()
+
   cat("Running NDVI LOEO baseline CV...\n")
   ndvi_loeo <- map_dfr(usable_traits, function(trait) {
-    res       <- linreg_loeo_cv(model_data_raw, "NDVI_raw", trait)
+    res       <- linreg_loeo_cv(model_data_raw_ndvi, "NDVI_centered", trait)
     res$trait <- trait
     res
   })
@@ -1595,7 +1500,7 @@ if (!"NDVI_raw" %in% names(model_data_raw)) {
 
   cat("Running NDVI within-env baseline CV...\n")
   ndvi_wenv <- map_dfr(usable_traits, function(trait) {
-    res       <- linreg_wenv_cv(model_data_raw, "NDVI_raw", trait)
+    res       <- linreg_wenv_cv(model_data_raw_ndvi, "NDVI_centered", trait)
     res$trait <- trait
     res
   })

@@ -45,9 +45,10 @@ model_data <- pheno_raw %>%
   rename(GID=all_of(gid_col)) %>%
   filter(group %in% c("HELF24_TP7","KET21_TP4","MCG23_TP5","MCG25_TP12","SNY22_TP6")) %>%
   mutate(NDVI_raw = (nir-red)/(nir+red+1e-8)) %>%
-  filter(Env != "MCG25") %>%
   group_by(Env) %>%
-  mutate(across(all_of(names(band_cols)), ~(. - mean(., na.rm=TRUE))/(sd(., na.rm=TRUE)+1e-8))) %>%
+  filter(abs(NDVI_raw - median(NDVI_raw, na.rm=TRUE)) <= 2.5 * mad(NDVI_raw, na.rm=TRUE)) %>%
+  mutate(NDVI_centered = (NDVI_raw - mean(NDVI_raw, na.rm=TRUE)) / (sd(NDVI_raw, na.rm=TRUE) + 1e-8),
+         across(all_of(names(band_cols)), ~(. - mean(., na.rm=TRUE))/(sd(., na.rm=TRUE)+1e-8))) %>%
   ungroup()
 
 BAND_NAMES <- names(band_cols)
@@ -84,12 +85,19 @@ make_tensors <- function(df, trait) {
 }
 
 # ── NDVI LOEO baseline ────────────────────────────────────────────────────
+# Z-score yield per environment to match NDVI_centered preprocessing.
+# model_data retains original-scale trait for LASSO/FullDNN (scale_from_train).
+model_data_ndvi <- model_data %>%
+  group_by(Env) %>%
+  mutate(across(all_of(trait), ~(. - mean(., na.rm=TRUE)) / (sd(., na.rm=TRUE) + 1e-8))) %>%
+  ungroup()
+
 cat("\n── NDVI linear LOEO ─────────────────────────────────────\n")
 envs <- sort(unique(as.character(model_data$Env)))
 ndvi_loeo <- map_dfr(envs, function(held) {
-  tr <- model_data %>% filter(Env!=held, !is.na(.data[[trait]]))
-  te <- model_data %>% filter(Env==held,  !is.na(.data[[trait]]))
-  fit  <- lm(as.formula(paste(trait,"~ NDVI_raw")), data=tr)
+  tr <- model_data_ndvi %>% filter(Env!=held, !is.na(.data[[trait]]))
+  te <- model_data_ndvi %>% filter(Env==held,  !is.na(.data[[trait]]))
+  fit  <- lm(as.formula(paste(trait,"~ NDVI_centered")), data=tr)
   pred <- predict(fit, newdata=te)
   tibble(held_env=held, r=cor(pred,te[[trait]],use="complete.obs"))
 })
@@ -133,7 +141,7 @@ FullDNNModel <- nn_module(
   forward = function(bands, env_idx=NULL, env_vec=NULL) {
     x <- bands %>% self$fc1() %>% nnf_relu() %>% self$drop()
     x <- x %>% self$fc2() %>% nnf_relu() %>% self$drop()
-    ev <- if (!is.null(env_idx)) self$env_emb(env_idx) else
+    ev <- if (!is.null(env_idx)) self$env_emb(env_idx$view(-1L)) else
           env_vec$expand(c(x$size(1),-1L))
     torch_cat(list(x,ev),dim=2) %>% self$pred_fc1() %>% nnf_relu() %>%
       self$drop() %>% self$pred_fc2()
