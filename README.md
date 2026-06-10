@@ -5,7 +5,7 @@
 [![Deep Learning: torch](https://img.shields.io/badge/Deep%20Learning-torch-EE4C2C.svg)](https://torch.mlverse.org/)
 [![GitHub Pages](https://img.shields.io/badge/Report-GitHub%20Pages-blue.svg)](https://sss9010.github.io/dnn-synthetic-vi/DNN_Synthetic_VI.html)
 
-Three approaches for deriving spectral vegetation indices from UAV multispectral imagery are compared for predicting barley grain yield across five field environments — benchmarked under the same leave-one-environment-out (LOEO) and within-environment cross-validation designs.
+Three approaches for deriving spectral vegetation indices from UAV multispectral imagery are compared for predicting barley grain yield across five field environments — benchmarked under leave-one-environment-out (LOEO) and within-environment cross-validation designs.
 
 📄 **[Read the full rendered report](https://sss9010.github.io/dnn-synthetic-vi/DNN_Synthetic_VI.html)**
 
@@ -13,7 +13,7 @@ Three approaches for deriving spectral vegetation indices from UAV multispectral
 
 **TLDR:**
 Standard indices (NDVI, NDRE, …) use fixed, hand-crafted band ratios. This analysis
-asks: can learning the band combination from data improve cross-environment prediction?
+asks: can learning the band combination from data improve cross-environment and within-environment prediction?
 
 Three approaches are evaluated using five raw spectral bands (blue, green, red,
 red-edge, NIR):
@@ -25,38 +25,31 @@ red-edge, NIR):
 3. **DNN bottleneck (Synthetic VI)** — a neural network with a single-neuron
    bottleneck learns a non-linear, data-optimised index end-to-end.
 
-**Key finding:** L-BFGS-VI achieves the best LOEO generalisation, outperforming NDVI,
-both DNN variants, LASSO polynomial SR, and PySR. The DNN bottleneck overfits to
-training environments — the mean-embedding proxy for unseen environments is a weak
-substitute for a learned representation, and stronger regularization with bigger datasets would be needed
-to close that gap.
+**Key findings:**
+- **Cross-environment (LOEO):** L-BFGS-VI (mean *r* = 0.53) is the best-performing learned method and closely matches NDVI. LASSO and DNN degrade on out-of-distribution environments — particularly MCG25, a late-season flight with an inverted spectral–yield relationship that breaks purely data-driven approaches.
+- **Within-environment:** LASSO (*r* = 0.72) and DNN (*r* = 0.70) both outperform NDVI (*r* ≈ 0.56) and L-BFGS (*r* = 0.66), showing that more expressive models capture genotypic yield variation more effectively when environmental context is held constant.
+- **Deployment:** A two-stage L-BFGS pipeline — formula learned from N−1 environments, calibrated with OLS on check plots in the target environment — provides a portable, interpretable VI that matches NDVI cross-environment performance with no neural network inference at deployment.
 
 ---
 
 ## Key Results
 
 <p align="center">
-  <img src="docs/figure/DNN_Synthetic_VI.Rmd/all-model-loeo-plot-1.png" width="700"
+  <img src="docs/DNN_Synthetic_VI_files/figure-html/all-model-loeo-plot-1.png" width="700"
        alt="All-model LOEO mean Pearson r comparison"/>
-  <br><em>LOEO mean Pearson r — all models compared. L-BFGS-VI leads cross-environment generalisation.</em>
+  <br><em>LOEO mean Pearson r — all models. L-BFGS-VI leads cross-environment generalisation.</em>
 </p>
 
 <p align="center">
-  <img src="docs/figure/DNN_Synthetic_VI.Rmd/loeo-accuracy-plot-1.png" width="650"
-       alt="LOEO cross-validation accuracy by held-out environment"/>
-  <br><em>Leave-One-Environment-Out accuracy per held-out trial site (dots = training reps)</em>
-</p>
-
-<p align="center">
-  <img src="docs/figure/DNN_Synthetic_VI.Rmd/all-model-wenv-plot-1.png" width="700"
+  <img src="docs/DNN_Synthetic_VI_files/figure-html/all-model-wenv-plot-1.png" width="700"
        alt="All-model within-environment 5-fold CV Pearson r comparison"/>
-  <br><em>Within-environment 5-fold CV — all models. DNN approaches are competitive within environments.</em>
+  <br><em>Within-environment 5-fold CV — LASSO and DNN outperform NDVI and L-BFGS within environments.</em>
 </p>
 
 <p align="center">
-  <img src="docs/figure/DNN_Synthetic_VI.Rmd/sensitivity-heatmap-1.png" width="600"
-       alt="Gradient-based spectral band importance per trait"/>
-  <br><em>Gradient-based band importance — which spectral channels drive the DNN Synthetic VI</em>
+  <img src="docs/DNN_Synthetic_VI_files/figure-html/two-stage-plot-1.png" width="650"
+       alt="Two-stage VI deployment pipeline results"/>
+  <br><em>Two-stage deployment pipeline: VI learned from N−1 environments, calibrated with OLS in the target environment.</em>
 </p>
 
 ---
@@ -67,13 +60,16 @@ to close that gap.
 
 The normalised-ratio structure of NDVI is preserved but all five bands enter
 both numerator and denominator with learnable weights, optimised by L-BFGS to
-directly maximise Pearson *r* on training data. Coefficients are initialised at
-the NDVI solution; OLS then calibrates the linear scale.
+directly maximise Pearson *r* on training data:
+
+$$\text{VI}_{\text{LBFGS}} = \frac{\mathbf{w}_{\text{num}}^\top \mathbf{x}}{\exp(\mathbf{w}_{\text{den}})^\top \mathbf{x} + \varepsilon}$$
+
+Coefficients are initialised at the NDVI solution; OLS then calibrates the linear scale.
 
 ### Approach 2 — Symbolic Regression
 
-- **LASSO polynomial SR** — degree-2 polynomial features (15 interaction terms)
-  with LASSO regularisation; fixed structure, learned coefficients.
+- **LASSO polynomial SR** — degree-2 polynomial features (20 terms: linear + squared + pairwise)
+  with LASSO regularisation; fixed structure, learned sparse coefficients.
 - **PySR** — evolutionary search over expression trees; discovers both formula
   structure and coefficients without constraints (requires Python + PySR).
 
@@ -91,9 +87,17 @@ Prediction Head   [SynVI ‖ env_embed(4)] → FC(8) → ReLU → FC(1) → trai
   one scalar, mirroring NDVI structure while allowing non-linear band combinations.
 - **Environment embedding** — learned 4-d vector per trial shifts the VI→trait
   mapping so the shared encoder can generalise across sites.
-- **Full DNN** variant (no bottleneck) serves as an upper-bound reference.
 - **LOEO inference** — mean embedding of the four training environments is used
-  as a proxy for unseen environments; no fine-tuning required.
+  as a proxy for unseen environments.
+
+### Two-Stage Deployment Pipeline
+
+A deployment-oriented evaluation that cleanly separates VI learning from calibration:
+
+- **Stage 1** — VI formula learned from N−1 training environments (L-BFGS or LASSO)
+- **Stage 2** — OLS `yield ~ VI` fit on check plots in the target environment; predict remaining genotypes
+
+The L-BFGS variant produces a portable five-band formula (no neural network inference needed) that can be applied in any GIS or raster calculator and calibrated with a minimal set of check plots.
 
 ---
 
@@ -103,11 +107,12 @@ Prediction Head   [SynVI ‖ env_embed(4)] → FC(8) → ReLU → FC(1) → trai
 |--------|-------------|
 | **LOEO** (Leave-One-Environment-Out) | Train on 4 trial sites, predict the held-out 5th. Measures cross-environment generalisation. |
 | **Within-env 5-fold by GID** | 5-fold CV within each environment, splits by genotype ID. Measures within-trial predictive ability for unseen lines. |
-| **Adapt B — freeze encoder, fine-tune head** | Pre-train on 4 envs; freeze encoder; fine-tune prediction head + embedding on adaptation GIDs. |
-| **Adapt C — SynVI + linear** | Pre-train on 4 envs; freeze encoder; fit OLS (trait ~ SynVI) on adaptation GIDs. No further neural network training. |
+| **Two-stage LOEO** | VI learned on 4 environments; OLS calibration by GID fold within held-out environment. |
 
 All schemes use **3 random-seed repetitions**. NDVI linear regression runs under
 the same designs as a baseline. Splits are always by GID to prevent data leakage.
+Bands are z-scored per environment; NDVI and yield are also z-scored per environment
+for the baseline regression.
 
 ---
 
@@ -116,16 +121,19 @@ the same designs as a baseline. Splits are always by GID to prevent data leakage
 ```
 dnn_synthetic_vi/
 ├── analysis/
-│   ├── DNN_Synthetic_VI.Rmd        # Main analysis — render this
-│   └── DNN_Synthetic_VI_cache/     # knitr cache for heavy training chunks
+│   ├── DNN_Synthetic_VI.Rmd          # Main analysis — render this
+│   ├── two_stage_vi_pipeline.R       # Standalone two-stage VI pipeline (A, B, D)
+│   ├── quick_model_comparison.R      # Fast LOEO preview (150 epochs, 1 rep)
+│   └── DNN_Synthetic_VI_cache/       # knitr cache for heavy training chunks
 ├── data/
-│   └── WMB_pheno.Rdata             # Input: merged spectral + phenotype table
+│   ├── WMB_pheno.Rdata               # Input: merged spectral + phenotype table
+│   └── model_results.Rdata           # Pre-saved CV results (load to skip retraining)
 ├── docs/
-│   ├── DNN_Synthetic_VI.html       # Pre-rendered HTML report
-│   └── figure/DNN_Synthetic_VI.Rmd/  # All generated figures (PNG)
+│   └── DNN_Synthetic_VI.html         # Pre-rendered HTML report
 └── scripts/
-    ├── ndvi_corr.R                 # NDVI–yield Pearson r per environment
-    └── variance_partition.R        # Between- vs within-env variance decomposition
+    ├── ndvi_corr.R                   # NDVI–yield Pearson r per environment
+    ├── variance_partition.R          # Between- vs within-env variance decomposition
+    └── save_model_results.R          # Extract CV results from knitr cache → .Rdata
 ```
 
 ---
@@ -144,6 +152,7 @@ dnn_synthetic_vi/
 **Five Env × Timepoint groups** are used — one optimal flight per trial year:
 `HELF24_TP7`, `KET21_TP4`, `MCG23_TP5`, `MCG25_TP12`, `SNY22_TP6`
 
+Preprocessing: per-environment NDVI outlier removal (median ± 2.5 × MAD), per-environment band z-scoring.
 
 ---
 
@@ -163,7 +172,11 @@ torch::install_torch()          # one-time LibTorch download (~0.5 GB)
 
 ## Rendering the Report
 
-Open R from the **project root** and run:
+### Fast re-render (plots only, no retraining)
+
+`data/model_results.Rdata` contains all pre-saved CV results. When this file
+exists, all training chunks are automatically skipped and the report renders in
+minutes:
 
 ```r
 rmarkdown::render("analysis/DNN_Synthetic_VI.Rmd",
@@ -171,9 +184,22 @@ rmarkdown::render("analysis/DNN_Synthetic_VI.Rmd",
                   output_file = "DNN_Synthetic_VI.html")
 ```
 
-The knitr cache skips heavy training chunks (`run-training`, `run-adaptation-cv`,
-`run-fulldnn-training`, `run-lasso-sr`, `run-lbfgs`) if code is unchanged.
-Delete `analysis/DNN_Synthetic_VI_cache/` to force a full re-run (~hours on CPU).
+### Full re-run from scratch
+
+Delete the saved results file to force retraining (~hours on CPU):
+
+```r
+file.remove("data/model_results.Rdata")
+rmarkdown::render("analysis/DNN_Synthetic_VI.Rmd",
+                  output_dir = "docs",
+                  output_file = "DNN_Synthetic_VI.html")
+```
+
+After a full re-run, update the saved results with:
+
+```r
+source("scripts/save_model_results.R")
+```
 
 ---
 
@@ -182,8 +208,9 @@ Delete `analysis/DNN_Synthetic_VI_cache/` to force a full re-run (~hours on CPU)
 ```r
 source("scripts/ndvi_corr.R")               # NDVI–yield Pearson r per environment
 source("scripts/variance_partition.R")      # eta² variance decomposition
-source("analysis/extract_results.R")        # load and print results from knitr cache
+source("scripts/save_model_results.R")      # extract CV results from cache → data/model_results.Rdata
 source("analysis/quick_model_comparison.R") # fast LOEO preview (150 epochs, 1 rep)
+source("analysis/two_stage_vi_pipeline.R")  # standalone two-stage pipeline (A, B, D)
 ```
 
 ---
@@ -210,4 +237,3 @@ prediction pipeline:
 ## Contact
 
 **Siim Sepp** — sss322@cornell.edu  
-
